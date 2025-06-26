@@ -1,0 +1,22 @@
+[package]
+name = "payment-api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+actix-web = "4.4"
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+reqwest = { version = "0.11", features = ["json"] }
+env_logger = "0.10"
+log = "0.4"
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+dotenv = "0.15"
+
+[dev-dependencies]
+actix-rt = "2.9"

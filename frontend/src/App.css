@@ -1,0 +1,14 @@
+.App {
+  text-align: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.header {
+  padding: 2rem 0;
+  color: white;
+}
+
+.main-content {
+  padding: 2rem;
+}
