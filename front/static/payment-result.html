@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Result</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; text-align: center; }
+        .container { max-width: 600px; margin: auto; padding: 30px; border: 1px solid #ccc; border-radius: 8px; }
+        h1 { margin-bottom: 20px; }
+        .message {
+            padding: 15px;
+            border-radius: 4px;
+            font-size: 1.2em;
+            margin-top: 20px;
+        }
+        .message.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .message.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .message.info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        a {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+        a:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Payment Result</h1>
+        <div id="resultMessage" class="message info">
+            Processing payment result...
+        </div>
+        <p>Please note: The definitive payment status is confirmed by the backend webhook.</p>
+        <a href="/">Go to Home Page</a>
+    </div>
+
+    <script>
+document.addEventListener('DOMContentLoaded', () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const id = urlParams.get('id');
+    const resourcePath = urlParams.get('resourcePath');
+    const resultMessageDiv = document.getElementById('resultMessage');
+
+    if (id && resourcePath) {
+        resultMessageDiv.classList.remove('info');
+        resultMessageDiv.classList.add('success');
+        resultMessageDiv.innerHTML = `
+            <p>Payment callback received!</p>
+            <p><strong>Transaction ID (id):</strong> ${id}</p>
+            <p><strong>Resource Path:</strong> ${resourcePath}</p>
+            <p>Your payment is being processed. Please check your account for final status.</p>
+        `;
+    } else if (id) {
+        resultMessageDiv.classList.remove('info');
+        resultMessageDiv.classList.add('success');
+        resultMessageDiv.innerHTML = `
+            <p>Transaction ID: ${id}</p>
+            <p>Payment was initiated. Awaiting final status...</p>
+        `;
+    } else {
+        resultMessageDiv.classList.remove('info');
+        resultMessageDiv.classList.add('error');
+        resultMessageDiv.textContent = 'No payment result data found.';
+    }
+});
+</script>
+
+</body>
+</html>

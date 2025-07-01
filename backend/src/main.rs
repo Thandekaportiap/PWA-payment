@@ -1,3 +1,4 @@
+// main.rs
 mod models;
 mod handlers;
 mod services;
@@ -6,65 +7,79 @@ use actix_web::{web, App, HttpServer, middleware::Logger};
 use actix_web::web::Data;
 use std::env;
 use dotenv::dotenv;
+use actix_cors::Cors;
 
 use services::{
     database::DatabaseService,
     peach::PeachPaymentService,
 };
 
-
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    // Load environment variables from .env file
-    // This must be called early to ensure env vars are available
     dotenv().ok();
-    
-    // Initialize logger
     env_logger::init();
 
-    // Initialize services
     let database_service = DatabaseService::new();
-    
-    // Get environment variables. Using .expect() to ensure they are set.
-    // If these environment variables are not found, the application will panic with a clear error message.
-    // This forces the use of the correct credentials from your .env file.
-    let peach_base_url = env::var("PEACH_BASE_URL")
-        .unwrap_or_else(|_| "https://testsecure.peachpayments.com".to_string()); // Default for convenience
 
-    let peach_entity_id = env::var("PEACH_ENTITY_ID")
-        .expect("PEACH_ENTITY_ID must be set in the environment or .env file.");
-    
-    let peach_access_token = env::var("PEACH_ACCESS_TOKEN")
-        .expect("PEACH_ACCESS_TOKEN must be set in the environment or .env file.");
-    
-    let peach_secret_key = env::var("PEACH_SECRET_KEY")
-        .expect("PEACH_SECRET_KEY must be set in the environment or .env file.");
+    // V1 related URLs and credentials (if still needed for other V1 routes)
+    let v1_base_url = env::var("PEACH_V1_BASE_URL")
+        .expect("PEACH_V1_BASE_URL must be set");
+    let v1_entity_id = env::var("PEACH_ENTITY_ID")
+        .expect("PEACH_ENTITY_ID must be set");
+    let v1_access_token = env::var("PEACH_ACCESS_TOKEN")
+        .expect("PEACH_ACCESS_TOKEN must be set");
+    let v1_secret_key = env::var("PEACH_SECRET_KEY")
+        .expect("PEACH_SECRET_KEY must be set"); // Used for webhook signature verification too
+
+    // V2 Embedded Checkout related URLs and credentials
+    let v2_auth_service_url = env::var("PEACH_AUTH_SERVICE_URL")
+        .expect("PEACH_AUTH_SERVICE_URL must be set");
+    let v2_checkout_endpoint = env::var("PEACH_CHECKOUT_V2_ENDPOINT")
+        .expect("PEACH_CHECKOUT_V2_ENDPOINT must be set");
+    let client_id = env::var("PEACH_CLIENT_ID")
+        .expect("PEACH_CLIENT_ID must be set");
+    let client_secret = env::var("PEACH_CLIENT_SECRET")
+        .expect("PEACH_CLIENT_SECRET must be set");
+    let merchant_id = env::var("PEACH_MERCHANT_ID")
+        .expect("PEACH_MERCHANT_ID must be set");
+    let v2_entity_id = env::var("PEACH_ENTITY_ID_V2") // Correctly load V2 specific entity ID
+        .expect("PEACH_ENTITY_ID_V2 must be set");
+    let notification_url = env::var("PEACH_NOTIFICATION_URL")
+        .expect("PEACH_NOTIFICATION_URL must be set");
+    let shopper_result_url = env::var("PEACH_SHOPPER_RESULT_URL") // New env var for shopperResultUrl
+        .expect("PEACH_SHOPPER_RESULT_URL must be set");
+
 
     let peach_service = PeachPaymentService::new(
-        peach_base_url,
-        peach_entity_id,
-        peach_access_token,
-        peach_secret_key,
+        v1_base_url,
+        v1_entity_id,
+        v1_access_token,
+        v1_secret_key,
+        v2_auth_service_url,
+        v2_checkout_endpoint,
+        v2_entity_id, // Pass V2 specific entity ID
+        client_id,
+        client_secret,
+        merchant_id,
+        notification_url,
+        shopper_result_url,
     );
 
     let port = env::var("PORT").unwrap_or_else(|_| "8080".to_string());
     let bind_address = format!("0.0.0.0:{}", port);
 
-    println!("Starting server at http://{}", bind_address);
-    println!("API Documentation:");
-    println!("  POST /api/v1/users/register - Register a new user");
-    println!("  GET  /api/v1/users/{{user_id}} - Get user details");
-    println!("  POST /api/v1/subscriptions/create - Create subscription");
-    println!("  GET  /api/v1/subscriptions/{{id}}/status - Get subscription status");
-    println!("  POST /api/v1/subscriptions/voucher - Apply voucher code");
-    println!("  POST /api/v1/payments/initiate - Initiate payment");
-    println!("  GET  /api/v1/payments/status/{{id}} - Check payment status");
-
     HttpServer::new(move || {
         App::new()
+            .wrap(Logger::default())
+            .wrap(
+                Cors::default()
+                    .allow_any_origin() // Consider restricting this in production
+                    .allow_any_method()
+                    .allow_any_header()
+                    .supports_credentials()
+            )
             .app_data(Data::new(database_service.clone()))
             .app_data(Data::new(peach_service.clone()))
-            .wrap(Logger::default())
             .service(
                 web::scope("/api/v1")
                     .service(
@@ -77,7 +92,8 @@ async fn main() -> std::io::Result<()> {
                             .service(handlers::payment::initiate_payment)
                             .service(handlers::payment::check_payment_status)
                             .service(handlers::payment::handle_payment_callback_get)
-                            .service(handlers::payment::handle_payment_callback_post)
+                            .service(handlers::payment::payment_callback)
+
                     )
                     .service(
                         web::scope("/subscriptions")

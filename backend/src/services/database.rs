@@ -64,7 +64,7 @@ impl DatabaseService {
             subscription_id: Some(payment_dto.subscription_id),
             amount: payment_dto.amount,
             status: PaymentStatus::Pending,
-            payment_method: payment_dto.payment_method.unwrap_or(PaymentMethod::CreditCard),
+            payment_method: payment_dto.payment_method.unwrap_or(PaymentMethod::Card),
             merchant_transaction_id: format!("TXN_{}", Uuid::new_v4().to_string().replace("-", "")[..16].to_uppercase()),
             checkout_id: None,
             created_at: Utc::now(),

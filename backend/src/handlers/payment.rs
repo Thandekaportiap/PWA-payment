@@ -1,18 +1,25 @@
 use actix_web::{HttpResponse, Result, post, get};
 use actix_web::web::{Data, Json, Path, Query};
-use uuid::Uuid;
-use serde::Deserialize;
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
+use bytes::Bytes;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use actix_web::HttpRequest;
+use crate::services::peach::PeachPaymentService;
+use actix_web::web; // Add this line
 use crate::{
     models::{
-        payment::{PaymentStatus, PaymentMethod, CreatePaymentDto},
+        payment::{PaymentStatus, CreatePaymentDto},
         subscription::SubscriptionStatus,
     },
-    services::{database::DatabaseService, peach::PeachPaymentService},
+    services::{database::DatabaseService},
 };
 
-type HmacSha256 = Hmac<Sha256>;
+#[derive(Debug, Serialize)]
+pub struct ApiResponseError {
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<String>,
+}
 
 #[derive(Deserialize)]
 pub struct PaymentCallbackQuery {
@@ -21,81 +28,73 @@ pub struct PaymentCallbackQuery {
     pub resource_path: Option<String>,
 }
 
+// POST /initiate
 #[post("/initiate")]
 pub async fn initiate_payment(
     db: Data<DatabaseService>,
     peach_service: Data<PeachPaymentService>,
     payload: Json<CreatePaymentDto>,
 ) -> Result<HttpResponse> {
-    // Validate subscription exists and is pending
-    let subscription_id = payload.subscription_id;
-    let subscription = match db.get_subscription(&subscription_id) {
+    let subscription_id = &payload.subscription_id;
+    let subscription = match db.get_subscription(subscription_id) {
         Some(sub) => sub,
-        None => return Ok(HttpResponse::NotFound().json("Subscription not found")),
+        None => return Ok(HttpResponse::NotFound().json(ApiResponseError {
+            message: "Subscription not found".to_string(),
+            details: None,
+        })),
     };
 
     if subscription.status != SubscriptionStatus::Pending {
-        return Ok(HttpResponse::BadRequest().json("Subscription is not pending"));
+        return Ok(HttpResponse::BadRequest().json(ApiResponseError {
+            message: "Subscription is not pending".to_string(),
+            details: None,
+        }));
     }
 
-    // Create payment record
     let payment_dto = CreatePaymentDto {
-        user_id: payload.user_id,
-        subscription_id: payload.subscription_id,
+        user_id: payload.user_id.clone(),
+        subscription_id: payload.subscription_id.clone(),
         amount: payload.amount,
-        payment_method: payload.payment_method.clone(),
+        payment_method: None,
     };
 
     let payment_record = match db.create_payment(payment_dto) {
         Ok(payment) => payment,
-        Err(e) => return Ok(HttpResponse::InternalServerError().json(format!("Error creating payment: {}", e))),
+        Err(e) => return Ok(HttpResponse::InternalServerError().json(ApiResponseError {
+            message: "Error creating payment record".to_string(),
+            details: Some(e.to_string()),
+        })),
     };
 
-    // Generate signature for Peach API
-    let mut params_for_signature = std::collections::HashMap::new();
-    params_for_signature.insert("authentication.entityId".to_string(), peach_service.get_entity_id().clone());
-    params_for_signature.insert("amount".to_string(), payload.amount.to_string());
-    params_for_signature.insert("currency".to_string(), "ZAR".to_string());
-    params_for_signature.insert("paymentType".to_string(), "DB".to_string());
-    params_for_signature.insert("merchantTransactionId".to_string(), payment_record.merchant_transaction_id.clone());
+    let user_id_str = payload.user_id.to_string();
+    let subscription_id_str = payload.subscription_id.to_string();
 
-    // Create signature
-    let mut data_to_sign = String::new();
-    for (key, value) in &params_for_signature {
-        data_to_sign.push_str(&format!("{}={}&", key, value));
-    }
-    data_to_sign.push_str(&peach_service.get_secret_key());
-    
-    let mut mac = HmacSha256::new_from_slice(peach_service.get_secret_key().as_bytes())
-        .expect("HMAC can take key of any size");
-    mac.update(data_to_sign.as_bytes());
-    let signature = hex::encode(mac.finalize().into_bytes());
-
-    // Initiate checkout with Peach
-    let payment_method = payload.payment_method.clone().unwrap_or(PaymentMethod::CreditCard);
-    match peach_service.initiate_checkout_api(
-        &payload.user_id,
-        &payload.subscription_id,
-        &payload.amount,
-        &payment_method,
-    ).await {
-        Ok(checkout_response) => {
-            // Update payment with checkout ID
-            if let Some(checkout_id) = checkout_response.get("id").and_then(|v| v.as_str()) {
+    match peach_service
+        .initiate_checkout_api_v2(&user_id_str, &subscription_id_str, payload.amount)
+        .await
+    {
+        Ok(peach_response) => {
+            if let Some(checkout_id) = peach_response.get("checkoutId").and_then(|v| v.as_str()) {
                 let _ = db.update_payment_checkout_id(&payment_record.merchant_transaction_id, checkout_id);
+
+                Ok(HttpResponse::Ok().json(serde_json::json!({
+                    "checkoutId": checkout_id
+                })))
+            } else {
+                Ok(HttpResponse::InternalServerError().json(ApiResponseError {
+                    message: "Peach Payments response missing 'checkoutId'".to_string(),
+                    details: Some(format!("Full response: {:?}", peach_response)),
+                }))
             }
-            
-            Ok(HttpResponse::Ok().json(serde_json::json!({
-                "payment_id": payment_record.id,
-                "merchant_transaction_id": payment_record.merchant_transaction_id,
-                "checkout_response": checkout_response,
-                "signature": signature
-            })))
-        },
-        Err(e) => Ok(HttpResponse::InternalServerError().json(format!("Error initiating payment: {}", e))),
+        }
+        Err(e) => Ok(HttpResponse::InternalServerError().json(ApiResponseError {
+            message: "Failed to initiate payment with Peach Payments".to_string(),
+            details: Some(e.to_string()),
+        })),
     }
 }
 
+// GET /status/{merchant_transaction_id}
 #[get("/status/{merchant_transaction_id}")]
 pub async fn check_payment_status(
     db: Data<DatabaseService>,
@@ -103,118 +102,210 @@ pub async fn check_payment_status(
     path: Path<String>,
 ) -> Result<HttpResponse> {
     let merchant_transaction_id = path.into_inner();
-    
-    // Get payment from database
     let payment = match db.get_payment_by_merchant_id(&merchant_transaction_id) {
-        Some(payment) => payment,
-        None => return Ok(HttpResponse::NotFound().json("Payment not found")),
+        Some(p) => p,
+        None => {
+            return Ok(HttpResponse::NotFound().json(ApiResponseError {
+                message: "Payment not found".to_string(),
+                details: Some(merchant_transaction_id),
+            }));
+        }
     };
 
-    // Check status with Peach if we have a checkout ID
-    if let Some(checkout_id) = &payment.checkout_id {
-        match peach_service.check_payment_status(checkout_id).await {
-            Ok(status_response) => {
-                // Update payment status based on response
-                if let Some(result) = status_response.get("result") {
-                    if let Some(code) = result.get("code").and_then(|v| v.as_str()) {
-                        let new_status = if code.starts_with("000.000") || code.starts_with("000.100") {
-                            PaymentStatus::Completed
-                        } else if code.starts_with("000.200") {
-                            PaymentStatus::Pending
-                        } else {
-                            PaymentStatus::Failed
-                        };
-                        
-                        let _ = db.update_payment_status(&merchant_transaction_id, &new_status);
-                        
-                        // If payment is completed, activate subscription
-                        if new_status == PaymentStatus::Completed {
-                            if let Some(subscription_id) = payment.subscription_id {
-                                let _ = db.activate_subscription(&subscription_id);
-                            }
-                        }
+    let checkout_id = match &payment.checkout_id {
+        Some(id) => id,
+        None => {
+            return Ok(HttpResponse::Ok().json(serde_json::json!({
+                "status": "info",
+                "message": "No checkout ID available",
+                "payment_details": payment
+            })));
+        }
+    };
+
+    match peach_service.check_payment_status(checkout_id).await {
+        Ok(status_response) => {
+            let new_status = status_response
+                .get("result")
+                .and_then(|r| r.get("code"))
+                .and_then(|c| c.as_str())
+                .map(|code| {
+                    if code.starts_with("000.000") || code.starts_with("000.100") {
+                        PaymentStatus::Completed
+                    } else if code.starts_with("000.200") {
+                        PaymentStatus::Pending
+                    } else {
+                        PaymentStatus::Failed
+                    }
+                });
+
+            if let Some(status) = new_status.clone() {
+                let _ = db.update_payment_status(&merchant_transaction_id, &status);
+
+                if status == PaymentStatus::Completed {
+                    if let Some(subscription_id) = payment.subscription_id {
+                        let _ = db.activate_subscription(&subscription_id);
                     }
                 }
-                
-                Ok(HttpResponse::Ok().json(status_response))
-            },
-            Err(e) => Ok(HttpResponse::InternalServerError().json(format!("Error checking payment status: {}", e))),
+            }
+
+            Ok(HttpResponse::Ok().json(serde_json::json!({
+                "peach_response": status_response,
+                "updated_status": new_status.map(|s| format!("{:?}", s)).unwrap_or("unknown".to_string())
+            })))
         }
-    } else {
-        Ok(HttpResponse::Ok().json(serde_json::json!({
-            "payment": payment,
-            "message": "No checkout ID available"
-        })))
+        Err(e) => Ok(HttpResponse::InternalServerError().json(ApiResponseError {
+            message: "Error checking payment status".to_string(),
+            details: Some(e.to_string()),
+        })),
     }
 }
 
+// GET /callback (legacy Peach redirect fallback)
 #[get("/callback")]
 pub async fn handle_payment_callback_get(
     query: Query<PaymentCallbackQuery>,
-    _db: Data<DatabaseService>,
     peach_service: Data<PeachPaymentService>,
 ) -> Result<HttpResponse> {
     if let Some(resource_path) = &query.resource_path {
-        // Extract checkout ID from resource path
-        let checkout_id = resource_path.trim_start_matches('/').split('/').next().unwrap_or("");
-        
-        if !checkout_id.is_empty() {
+        let parts: Vec<&str> = resource_path.trim_start_matches('/').split('/').collect();
+        if parts.len() >= 2 && parts[0] == "checkouts" {
+            let checkout_id = parts[1];
             match peach_service.check_payment_status(checkout_id).await {
                 Ok(status_response) => {
-                    // Process the callback
-                    return Ok(HttpResponse::Ok().json(serde_json::json!({
-                        "status": "success",
-                        "data": status_response
-                    })));
-                },
+                    let status_param = if status_response
+                        .get("result")
+                        .and_then(|r| r.get("code"))
+                        .and_then(|c| c.as_str())
+                        .map_or(false, |code| code.starts_with("000."))
+                    {
+                        "success"
+                    } else {
+                        "failure"
+                    };
+
+                    return Ok(HttpResponse::Found()
+                        .insert_header((
+                            "Location",
+                            format!(
+                                "/payment-result.html?id={}&resourcePath={}",
+                                status_response
+                                    .get("merchantTransactionId")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("unknown"),
+                                resource_path
+                            ),
+                        ))
+                        .finish());
+                }
                 Err(e) => {
-                    return Ok(HttpResponse::InternalServerError().json(format!("Error processing callback: {}", e)));
+                    eprintln!("❌ Error processing GET callback: {}", e);
+                    return Ok(HttpResponse::Found()
+                        .insert_header(("Location", "/payment-result.html?status=error"))
+                        .finish());
                 }
             }
         }
     }
-    
-    Ok(HttpResponse::Ok().json(serde_json::json!({
-        "status": "received",
-        "message": "Callback received but no valid resource path"
+
+    Ok(HttpResponse::BadRequest().json(serde_json::json!({
+        "status": "error",
+        "message": "Invalid or missing resource path"
     })))
 }
 
+// POST /callback (webhook)
 #[post("/callback")]
-pub async fn handle_payment_callback_post(
-    payload: Json<serde_json::Value>,
-    db: Data<DatabaseService>,
-) -> Result<HttpResponse> {
-    // Log the callback for debugging
-    println!("Payment callback received: {:?}", payload);
-    
-    // Extract relevant information from the callback
-    if let Some(merchant_transaction_id) = payload.get("merchantTransactionId").and_then(|v| v.as_str()) {
-        if let Some(result) = payload.get("result") {
-            if let Some(code) = result.get("code").and_then(|v| v.as_str()) {
-                let new_status = if code.starts_with("000.000") || code.starts_with("000.100") {
-                    PaymentStatus::Completed
-                } else if code.starts_with("000.200") {
-                    PaymentStatus::Pending
-                } else {
-                    PaymentStatus::Failed
-                };
-                
-                let _ = db.update_payment_status(merchant_transaction_id, &new_status);
-                
-                // If payment is completed, activate subscription
-                if new_status == PaymentStatus::Completed {
-                    if let Some(payment) = db.get_payment_by_merchant_id(merchant_transaction_id) {
-                        if let Some(subscription_id) = payment.subscription_id {
-                            let _ = db.activate_subscription(&subscription_id);
-                        }
-                    }
+pub async fn payment_callback(
+    req: HttpRequest,
+    body: web::Bytes,
+    peach_service: web::Data<PeachPaymentService>,
+    db: web::Data<DatabaseService>,
+) -> HttpResponse {
+     // Log raw body for debugging
+    // 1. Log raw incoming data
+    let body_str = match std::str::from_utf8(&body) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("❌ Invalid UTF-8 body: {}", e);
+            return HttpResponse::BadRequest().body("Invalid UTF-8");
+        }
+    };
+    println!("📩 Raw webhook body: {}", body_str);
+    println!("Body length: {} bytes", body.len());
+
+    // 2. Parse form data to get the signature
+    let form_map: HashMap<String, String> = match serde_urlencoded::from_bytes(&body) {
+        Ok(map) => map,
+        Err(e) => {
+            eprintln!("❌ Failed to parse form body: {}", e);
+            return HttpResponse::BadRequest().body("Invalid form data");
+        }
+    };
+
+    let provided_signature = form_map.get("signature")
+        .map(|s| s.as_str())
+        .unwrap_or("");
+
+    // 3. Debug output before validation
+  
+    println!("Provided signature: {}", provided_signature);
+
+    // 4. Validate signature with EXACT body bytes
+    if !peach_service.validate_webhook_signature(&body, provided_signature) {
+        // Calculate what we expected for debugging
+        let calculated = peach_service.calculate_signature(&body);
+        eprintln!("❌ Signature validation failed");
+        eprintln!("Calculated signature: {}", calculated);
+        eprintln!("Provided signature:   {}", provided_signature);
+        eprintln!("Body content: {}", body_str);
+        return HttpResponse::Unauthorized().body("Invalid signature");
+    }
+
+    let status_code = form_map.get("result.code").cloned().unwrap_or_default();
+    let merchant_transaction_id = form_map
+        .get("merchantTransactionId")
+        .cloned()
+        .unwrap_or_default();
+    let subscription_id = form_map
+        .get("customParameters[subscription_id]")
+        .or_else(|| form_map.get("customParameters%5Bsubscription_id%5D"))
+        .cloned();
+
+    println!(
+        "🧾 Parsed: result.code={}, transaction_id={}, subscription_id={:?}",
+        status_code, merchant_transaction_id, subscription_id
+    );
+
+    match status_code.as_str() {
+        "000.000.000" | "000.100.110" => {
+            println!("✅ Payment successful");
+
+            // Fetch the payment record from DB
+            if let Some(payment) = db.get_payment_by_merchant_id(&merchant_transaction_id) {
+                let _ = db.update_payment_status(&merchant_transaction_id, &PaymentStatus::Completed);
+
+                if let Some(ref sub_id) = payment.subscription_id {
+                    let _ = db.activate_subscription(sub_id);
                 }
+            } else {
+                println!("⚠️ No payment found for merchantTransactionId: {}", merchant_transaction_id);
             }
+        },
+        "100.396.104" => {
+            println!("⚠️ Payment uncertain/cancelled by user");
+            let _ = db.update_payment_status(&merchant_transaction_id, &PaymentStatus::Failed);
+        },
+        "000.200.100" => {
+            println!("ℹ️ Checkout created - no action needed");
+        },
+        "000.200.000" => {
+            println!("ℹ️ Payment pending - no action needed");
+        },
+        _ => {
+            println!("⚠️ Unhandled result.code: {}", status_code);
         }
     }
-    
-    Ok(HttpResponse::Ok().json(serde_json::json!({
-        "status": "processed"
-    })))
+
+    HttpResponse::Ok().body("Webhook received")
 }

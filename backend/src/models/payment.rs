@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
+use std::fmt;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PaymentStatus {
@@ -11,12 +12,23 @@ pub enum PaymentStatus {
     Refunded,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub enum PaymentMethod {
-    CreditCard,
-    DebitCard,
-    BankTransfer,
+    Card,
+    EFT,
     Voucher,
+}
+
+impl fmt::Display for PaymentMethod {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = match self {
+            PaymentMethod::Card => "CARD",
+            PaymentMethod::EFT => "EFT",
+            PaymentMethod::Voucher => "VOUCHER",
+        };
+        write!(f, "{}", s)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

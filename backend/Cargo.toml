@@ -17,6 +17,13 @@ hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
 dotenv = "0.15"
+actix-cors = "0.7"
+bytes = "1"
+
+serde_urlencoded = "0.7"
+web-sys = "0.3.64"
+
+
 
 [dev-dependencies]
 actix-rt = "2.9"
