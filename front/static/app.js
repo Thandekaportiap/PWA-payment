@@ -1,6 +1,6 @@
 // static/app.js
 
-const API_BASE_URL = 'http://127.0.0.1:8080/api/v1'; // Adjust if your backend runs on a different address/port
+const API_BASE_URL = 'http://127.0.0.1:8080/api/v1'; 
 
 let currentUserId = localStorage.getItem('currentUserId') || null;
 let currentSubscriptionId = localStorage.getItem('currentSubscriptionId') || null;
@@ -186,44 +186,10 @@ async function createSubscription() {
     }
 }
 
-async function processVoucher() {
-    hideMessage('voucherMessage');
-    if (!currentUserId || !currentSubscriptionId || currentSubscriptionStatus !== 'Pending') {
-        showMessage('voucherMessage', 'Please create a pending subscription first.', 'error');
-        return;
-    }
 
-    const voucherCode = document.getElementById('voucherCode').value;
 
-    try {
-        const response = await fetch(`${API_BASE_URL}/subscriptions/process-voucher`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                user_id: currentUserId,
-                subscription_id: currentSubscriptionId,
-                voucher_code: voucherCode
-            })
-        });
-        const data = await response.json();
-        if (response.ok) {
-            // After successful voucher, subscription status should update to 'Active'
-            currentSubscriptionStatus = 'Active'; // Assuming backend handles this
-            localStorage.setItem('currentSubscriptionStatus', currentSubscriptionStatus);
-            showMessage('voucherMessage', `Voucher applied! Result: ${data.result.description}`, 'success');
-            updateSubscriptionInfoUI();
-            // Using a custom message box instead of alert()
-            showMessage('peachPaymentMessage', 'Voucher applied and subscription activated. Check your backend logs for payment and subscription status.', 'info');
 
-        } else {
-            showMessage('voucherMessage', `Error: ${JSON.stringify(data)}`, 'error');
-        }
-    } catch (error) {
-        console.error('Error processing voucher:', error);
-        showMessage('voucherMessage', 'An error occurred during voucher processing.', 'error');
-    }
-}
-
+// static/app.js - relevant part of initiatePayment function
 
 async function initiatePayment() {
     hideMessage('paymentInitiateMessage');
@@ -234,75 +200,103 @@ async function initiatePayment() {
         return;
     }
 
-    const amount = parseFloat(currentSubscriptionPrice); // Ensure amount is a number for backend
+    const amount = parseFloat(currentSubscriptionPrice);
 
     try {
+        // Clear previous checkout if exists
+        const container = document.getElementById('checkout-container');
+        container.innerHTML = '';
+
         const response = await fetch(`${API_BASE_URL}/payments/initiate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 user_id: currentUserId,
                 subscription_id: currentSubscriptionId,
-                amount: amount, // Send as number
+                amount: amount,
             })
         });
+        
         const data = await response.json();
 
-        if (response.ok) {
-            const checkoutId = data.checkoutId;
-            // IMPORTANT: Replace '<YOUR_PEACH_PAYMENTS_V2_ENTITY_ID>' with your actual V2 Entity ID from .env (PEACH_ENTITY_ID_V2).
-            // It's ideal for your backend to send this, but for now, you can hardcode it here.
-            // Example: "8ac7a4c8961da56701961e61c57a0241"
-            const entityId = "8ac7a4c8961da56701961e61c57a0241"; // <--- REPLACE THIS WITH YOUR ACTUAL V2 ENTITY ID
-
-            if (checkoutId && entityId) {
-                showMessage('paymentInitiateMessage', `Payment initiated! Checkout ID: ${checkoutId}. Loading Peach Payments form...`, 'info');
-
-                // --- CORRECT EMBEDDED CHECKOUT INITIALIZATION ---
-               const checkout = Checkout.initiate({
-  key: entityId,
-  checkoutId: checkoutId,
-  events: {
-    options: {
-          theme: {
-            brand: {
-              primary: "black",
-            },
-            cards: {
-              background: "white",
-              backgroundHover: "gray",
-            },
-          },
-        },  // <- FIXED
-    onCompleted: (event) => {
-      console.log("Payment Completed:", event);
-      showMessage('peachPaymentMessage', `Payment completed! Status: ${event.result.description}`, 'success');
-     window.location.href = `/payment-result.html?id=${event.merchantTransactionId}`;
-
-    },
-    onCancelled: (event) => {
-      console.log("Payment Cancelled:", event);
-      showMessage('peachPaymentMessage', 'Payment cancelled by user.', 'error');
-    },
-    onExpired: (event) => {
-      console.log("Payment Expired:", event);
-      showMessage('peachPaymentMessage', 'Payment session expired.', 'error');
-    },
-    onBeforePayment: () => true,
-  },
-});
-
-                checkout.render("#checkout-container"); // Render into your designated div
-
-            } else {
-                showMessage('paymentInitiateMessage', 'Error: Missing checkout ID or entity ID from backend.', 'error');
-            }
-        } else {
-            showMessage('paymentInitiateMessage', `Error initiating payment: ${JSON.stringify(data)}`, 'error');
+        if (!response.ok) {
+            throw new Error(data.message || 'Failed to initiate payment');
         }
+
+        const { checkoutId, merchantTransactionId } = data;
+        if (!checkoutId || !merchantTransactionId) {
+            throw new Error('Missing required payment data from server');
+        }
+
+        // Store payment data in multiple places for redundancy
+        window.currentPayment = {
+            checkoutId,
+            merchantTransactionId,
+            subscriptionId: currentSubscriptionId
+        };
+        localStorage.setItem('currentPayment', JSON.stringify(window.currentPayment));
+
+        showMessage('paymentInitiateMessage', 'Loading payment form...', 'info');
+
+        // Verify Checkout is available
+        if (typeof Checkout === 'undefined') {
+            throw new Error('Peach Payments checkout not loaded');
+        }
+
+        const entityId = "8ac7a4c8961da56701961e61c57a0241"; // Verify this is correct
+        
+        // Initialize checkout with proper error handling
+        try {
+            const checkout = Checkout.initiate({
+                key: entityId,
+                checkoutId: checkoutId,
+                events: {
+                    options: {
+                        theme: {
+                            brand: {
+                                primary: "black",
+                            },
+                            cards: {
+                                background: "white",
+                                backgroundHover: "red",
+                            },
+                        },
+                    }, 
+                    onCompleted: (event) => {
+                        console.log("Payment Completed:", event);
+                        const txnId = event.merchantTransactionId || 
+                                     (window.currentPayment?.merchantTransactionId) || 
+                                     merchantTransactionId;
+                        
+                        if (!txnId) {
+                            showMessage('peachPaymentMessage', 'Payment completed but could not process transaction ID', 'error');
+                            return;
+                        }
+                        
+                        showMessage('peachPaymentMessage', 'Payment completed successfully!', 'success');
+                        window.location.href = `/payment-result.html?id=${txnId}`;
+                    },
+                    onCancelled: (event) => {
+                        console.log("Payment Cancelled:", event);
+                        showMessage('peachPaymentMessage', 'Payment cancelled by user', 'error');
+                    },
+                    onExpired: (event) => {
+                        console.log("Payment Expired:", event);
+                        showMessage('peachPaymentMessage', 'Payment session expired', 'error');
+                    },
+                    onBeforePayment: () => true,
+                },
+            });
+
+            checkout.render("#checkout-container");
+        } catch (initError) {
+            console.error('Checkout initialization error:', initError);
+            throw new Error('Failed to initialize payment form');
+        }
+
     } catch (error) {
-        console.error('Error initiating payment:', error);
-        showMessage('paymentInitiateMessage', 'An error occurred during payment initiation.', 'error');
+        console.error('Payment initiation error:', error);
+        showMessage('paymentInitiateMessage', `Error: ${error.message}`, 'error');
     }
 }
 

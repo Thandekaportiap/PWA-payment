@@ -64,10 +64,11 @@ impl PeachPaymentService {
         user_id: &str,
         subscription_id: &str,
         amount: f64,
+        merchant_transaction_id: &str, 
     ) -> Result<Value, Box<dyn Error + Send + Sync>> {
         let token = self.get_oauth_token().await?;
 
-        let transaction_id = Uuid::new_v4().to_string();
+       
         let nonce = Uuid::new_v4().to_string();
 
         let payload = json!({
@@ -76,7 +77,7 @@ impl PeachPaymentService {
             },
             "amount": amount,
             "currency": "ZAR",
-            "merchantTransactionId": transaction_id,
+           "merchantTransactionId": merchant_transaction_id, 
             "paymentType": "DB",
             "nonce": nonce,
             "customer": {

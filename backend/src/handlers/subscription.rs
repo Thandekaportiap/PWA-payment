@@ -46,52 +46,7 @@ pub async fn get_subscription_status(
     }
 }
 
-#[post("/voucher")]
-pub async fn process_voucher(
-    db: Data<DatabaseService>,
-    payload: Json<VoucherRequest>,
-) -> Result<HttpResponse> {
-    // Validate voucher code (implement your voucher validation logic)
-    if payload.voucher_code.is_empty() {
-        return Ok(HttpResponse::BadRequest().json("Invalid voucher code"));
-    }
-    
-    // Check if subscription exists
-    let subscription = match db.get_subscription(&payload.subscription_id) {
-        Some(sub) => sub,
-        None => return Ok(HttpResponse::NotFound().json("Subscription not found")),
-    };
-    
-    if subscription.status != SubscriptionStatus::Pending {
-        return Ok(HttpResponse::BadRequest().json("Subscription is not pending"));
-    }
-    
-    // Create a payment record for the voucher
-    let payment_dto = CreatePaymentDto {
-        user_id: payload.user_id,
-        subscription_id: payload.subscription_id,
-        amount: 0.0, // Voucher amount is 0
-        payment_method: Some(PaymentMethod::Voucher),
-    };
-    
-    match db.create_payment(payment_dto) {
-        Ok(_payment) => {
-            // Activate the subscription immediately for voucher payments
-            match db.activate_subscription(&payload.subscription_id) {
-                Ok(_) => Ok(HttpResponse::Ok().json(serde_json::json!({
-                    "result": {
-                        "code": "000.000.000",
-                        "description": "Voucher applied successfully"
-                    },
-                    "subscription_id": payload.subscription_id,
-                    "status": "active"
-                }))),
-                Err(e) => Ok(HttpResponse::InternalServerError().json(format!("Error activating subscription: {}", e))),
-            }
-        },
-        Err(e) => Ok(HttpResponse::InternalServerError().json(format!("Error processing voucher: {}", e))),
-    }
-}
+
 
 #[post("/activate")]
 pub async fn activate_subscription(

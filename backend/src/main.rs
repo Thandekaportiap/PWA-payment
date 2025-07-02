@@ -99,7 +99,6 @@ async fn main() -> std::io::Result<()> {
                         web::scope("/subscriptions")
                             .service(handlers::subscription::create_subscription)
                             .service(handlers::subscription::get_subscription_status)
-                            .service(handlers::subscription::process_voucher)
                             .service(handlers::subscription::activate_subscription)
                     )
             )

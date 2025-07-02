@@ -51,6 +51,9 @@ pub async fn initiate_payment(
         }));
     }
 
+    let initial_payment_id = uuid::Uuid::new_v4(); // Generate a new UUID for the payment
+    let merchant_transaction_id = format!("TXN_{}", initial_payment_id.simple()); // Prefix with TXN_ for internal tracking
+
     let payment_dto = CreatePaymentDto {
         user_id: payload.user_id.clone(),
         subscription_id: payload.subscription_id.clone(),
@@ -66,20 +69,24 @@ pub async fn initiate_payment(
         })),
     };
 
+
+     let merchant_transaction_id = payment_record.merchant_transaction_id.clone();
     let user_id_str = payload.user_id.to_string();
     let subscription_id_str = payload.subscription_id.to_string();
 
+
     match peach_service
-        .initiate_checkout_api_v2(&user_id_str, &subscription_id_str, payload.amount)
+         .initiate_checkout_api_v2(&user_id_str, &subscription_id_str, payload.amount, &payment_record.merchant_transaction_id)
         .await
     {
         Ok(peach_response) => {
-            if let Some(checkout_id) = peach_response.get("checkoutId").and_then(|v| v.as_str()) {
-                let _ = db.update_payment_checkout_id(&payment_record.merchant_transaction_id, checkout_id);
+           if let Some(checkout_id) = peach_response.get("checkoutId").and_then(|v| v.as_str()) {
+    let _ = db.update_payment_checkout_id(&payment_record.merchant_transaction_id, checkout_id);
 
-                Ok(HttpResponse::Ok().json(serde_json::json!({
-                    "checkoutId": checkout_id
-                })))
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "checkoutId": checkout_id,
+        "merchantTransactionId": payment_record.merchant_transaction_id
+    })))
             } else {
                 Ok(HttpResponse::InternalServerError().json(ApiResponseError {
                     message: "Peach Payments response missing 'checkoutId'".to_string(),
@@ -214,6 +221,26 @@ pub async fn handle_payment_callback_get(
     })))
 }
 
+// Helper function to create signature payload in the correct format for Peach Payments
+fn create_signature_payload(form_data: &HashMap<String, String>) -> String {
+    // Get all parameters except signature
+    let mut params: Vec<(&String, &String)> = form_data
+        .iter()
+        .filter(|(key, _)| *key != "signature")
+        .collect();
+    
+    // Sort alphabetically by key
+    params.sort_by(|a, b| a.0.cmp(b.0));
+    
+    // Concatenate key+value pairs (no separators)
+    // serde_urlencoded already decoded the values for us
+    params
+        .into_iter()
+        .map(|(key, value)| format!("{}{}", key, value))
+        .collect::<Vec<_>>()
+        .join("")
+}
+
 // POST /callback (webhook)
 #[post("/callback")]
 pub async fn payment_callback(
@@ -222,7 +249,6 @@ pub async fn payment_callback(
     peach_service: web::Data<PeachPaymentService>,
     db: web::Data<DatabaseService>,
 ) -> HttpResponse {
-     // Log raw body for debugging
     // 1. Log raw incoming data
     let body_str = match std::str::from_utf8(&body) {
         Ok(s) => s,
@@ -234,7 +260,7 @@ pub async fn payment_callback(
     println!("📩 Raw webhook body: {}", body_str);
     println!("Body length: {} bytes", body.len());
 
-    // 2. Parse form data to get the signature
+    // 2. Parse form data to get all parameters
     let form_map: HashMap<String, String> = match serde_urlencoded::from_bytes(&body) {
         Ok(map) => map,
         Err(e) => {
@@ -247,26 +273,35 @@ pub async fn payment_callback(
         .map(|s| s.as_str())
         .unwrap_or("");
 
-    // 3. Debug output before validation
-  
-    println!("Provided signature: {}", provided_signature);
+    if provided_signature.is_empty() {
+        eprintln!("❌ No signature provided in webhook");
+        return HttpResponse::BadRequest().body("Missing signature");
+    }
 
-    // 4. Validate signature with EXACT body bytes
-    if !peach_service.validate_webhook_signature(&body, provided_signature) {
-        // Calculate what we expected for debugging
-        let calculated = peach_service.calculate_signature(&body);
+    // 3. Create signature payload using Peach Payments format
+    let signature_payload = create_signature_payload(&form_map);
+    
+    println!("🔍 Original body: {}", body_str);
+    println!("🔍 Signature payload (Peach format): {}", signature_payload);
+    println!("🔍 Provided signature: {}", provided_signature);
+
+    // 4. Validate signature using the properly formatted payload
+    if !peach_service.validate_webhook_signature(signature_payload.as_bytes(), provided_signature) {
         eprintln!("❌ Signature validation failed");
-        eprintln!("Calculated signature: {}", calculated);
-        eprintln!("Provided signature:   {}", provided_signature);
-        eprintln!("Body content: {}", body_str);
+        eprintln!("Expected format: key1value1key2value2... (sorted alphabetically)");
         return HttpResponse::Unauthorized().body("Invalid signature");
     }
 
+    println!("✅ Webhook signature validated successfully");
+
+    // Extract important fields
     let status_code = form_map.get("result.code").cloned().unwrap_or_default();
     let merchant_transaction_id = form_map
         .get("merchantTransactionId")
         .cloned()
         .unwrap_or_default();
+    
+    // Handle both encoded and unencoded parameter names for subscription_id
     let subscription_id = form_map
         .get("customParameters[subscription_id]")
         .or_else(|| form_map.get("customParameters%5Bsubscription_id%5D"))
@@ -277,6 +312,7 @@ pub async fn payment_callback(
         status_code, merchant_transaction_id, subscription_id
     );
 
+    // Process based on status code
     match status_code.as_str() {
         "000.000.000" | "000.100.110" => {
             println!("✅ Payment successful");

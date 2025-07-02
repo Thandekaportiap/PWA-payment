@@ -41,6 +41,7 @@ impl DatabaseService {
         };
 
         users.push(user.clone());
+        println!("✅ Created user: {} ({})", user.name, user.id);
         Ok(user)
     }
 
@@ -58,6 +59,9 @@ impl DatabaseService {
     pub fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Payment, String> {
         let mut payments = self.payments.lock().unwrap();
         
+        // Generate a unique merchant transaction ID
+        let merchant_transaction_id = format!("TXN_{}", Uuid::new_v4().simple().to_string().to_uppercase()[..16].to_string());
+        
         let payment = Payment {
             id: Uuid::new_v4(),
             user_id: payment_dto.user_id,
@@ -65,13 +69,15 @@ impl DatabaseService {
             amount: payment_dto.amount,
             status: PaymentStatus::Pending,
             payment_method: payment_dto.payment_method.unwrap_or(PaymentMethod::Card),
-            merchant_transaction_id: format!("TXN_{}", Uuid::new_v4().to_string().replace("-", "")[..16].to_uppercase()),
+            merchant_transaction_id: merchant_transaction_id.clone(),
             checkout_id: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
 
         payments.push(payment.clone());
+        println!("✅ Created payment: ID={}, MerchantTxnId={}, Amount={}", 
+                payment.id, payment.merchant_transaction_id, payment.amount);
         Ok(payment)
     }
 
@@ -82,17 +88,36 @@ impl DatabaseService {
 
     pub fn get_payment_by_merchant_id(&self, merchant_transaction_id: &str) -> Option<Payment> {
         let payments = self.payments.lock().unwrap();
-        payments.iter().find(|p| p.merchant_transaction_id == merchant_transaction_id).cloned()
+        let found = payments.iter().find(|p| p.merchant_transaction_id == merchant_transaction_id).cloned();
+        
+        if found.is_none() {
+            println!("🔍 Payment not found for merchant_transaction_id: {}", merchant_transaction_id);
+            println!("🔍 Available payments in database:");
+            for payment in payments.iter().take(10) { // Show last 10 payments
+                println!("  - ID: {}, MerchantTxnId: {}, Status: {:?}, Amount: {}", 
+                        payment.id, payment.merchant_transaction_id, payment.status, payment.amount);
+            }
+            if payments.len() > 10 {
+                println!("  ... and {} more payments", payments.len() - 10);
+            }
+        }
+        
+        found
     }
 
     pub fn update_payment_status(&self, merchant_transaction_id: &str, status: &PaymentStatus) -> Result<(), String> {
         let mut payments = self.payments.lock().unwrap();
         if let Some(payment) = payments.iter_mut().find(|p| p.merchant_transaction_id == merchant_transaction_id) {
+            let old_status = payment.status.clone();
             payment.status = status.clone();
             payment.updated_at = Utc::now();
+            println!("✅ Updated payment status: {} -> {:?} (MerchantTxnId: {})", 
+                    format!("{:?}", old_status), status, merchant_transaction_id);
             Ok(())
         } else {
-            Err("Payment not found".to_string())
+            let error_msg = format!("Payment not found for merchant_transaction_id: {}", merchant_transaction_id);
+            println!("❌ {}", error_msg);
+            Err(error_msg)
         }
     }
 
@@ -101,9 +126,13 @@ impl DatabaseService {
         if let Some(payment) = payments.iter_mut().find(|p| p.merchant_transaction_id == merchant_transaction_id) {
             payment.checkout_id = Some(checkout_id.to_string());
             payment.updated_at = Utc::now();
+            println!("✅ Updated payment checkout_id: {} (MerchantTxnId: {})", 
+                    checkout_id, merchant_transaction_id);
             Ok(())
         } else {
-            Err("Payment not found".to_string())
+            let error_msg = format!("Payment not found for merchant_transaction_id: {}", merchant_transaction_id);
+            println!("❌ {}", error_msg);
+            Err(error_msg)
         }
     }
 
@@ -119,7 +148,7 @@ impl DatabaseService {
         let subscription = Subscription {
             id: Uuid::new_v4(),
             user_id: subscription_dto.user_id,
-            plan_name: subscription_dto.plan_name,
+            plan_name: subscription_dto.plan_name.clone(),
             price: subscription_dto.price,
             status: SubscriptionStatus::Pending,
             start_date: None,
@@ -129,6 +158,8 @@ impl DatabaseService {
         };
 
         subscriptions.push(subscription.clone());
+        println!("✅ Created subscription: ID={}, Plan={}, Price={}", 
+                subscription.id, subscription.plan_name, subscription.price);
         Ok(subscription)
     }
 
@@ -140,13 +171,18 @@ impl DatabaseService {
     pub fn activate_subscription(&self, subscription_id: &Uuid) -> Result<(), String> {
         let mut subscriptions = self.subscriptions.lock().unwrap();
         if let Some(subscription) = subscriptions.iter_mut().find(|s| s.id == *subscription_id) {
+            let old_status = subscription.status.clone();
             subscription.status = SubscriptionStatus::Active;
             subscription.start_date = Some(Utc::now());
             subscription.end_date = Some(Utc::now() + Duration::days(30)); // 30-day subscription
             subscription.updated_at = Utc::now();
+            println!("✅ Activated subscription: {} -> Active (ID: {})", 
+                    format!("{:?}", old_status), subscription_id);
             Ok(())
         } else {
-            Err("Subscription not found".to_string())
+            let error_msg = format!("Subscription not found: {}", subscription_id);
+            println!("❌ {}", error_msg);
+            Err(error_msg)
         }
     }
 
@@ -158,12 +194,48 @@ impl DatabaseService {
     pub fn update_subscription_status(&self, subscription_id: &Uuid, status: SubscriptionStatus) -> Result<(), String> {
         let mut subscriptions = self.subscriptions.lock().unwrap();
         if let Some(subscription) = subscriptions.iter_mut().find(|s| s.id == *subscription_id) {
-            subscription.status = status;
+            let old_status = subscription.status.clone();
+            subscription.status = status.clone();
             subscription.updated_at = Utc::now();
+            println!("✅ Updated subscription status: {:?} -> {:?} (ID: {})", 
+                    old_status, status, subscription_id);
             Ok(())
         } else {
-            Err("Subscription not found".to_string())
+            let error_msg = format!("Subscription not found: {}", subscription_id);
+            println!("❌ {}", error_msg);
+            Err(error_msg)
         }
+    }
+
+    // Debug methods
+    pub fn debug_list_payments(&self) -> Vec<Payment> {
+        let payments = self.payments.lock().unwrap();
+        payments.clone()
+    }
+
+    pub fn debug_list_subscriptions(&self) -> Vec<Subscription> {
+        let subscriptions = self.subscriptions.lock().unwrap();
+        subscriptions.clone()
+    }
+
+    pub fn debug_print_all_payments(&self) {
+        let payments = self.payments.lock().unwrap();
+        println!("🔍 All payments in database ({} total):", payments.len());
+        for (i, payment) in payments.iter().enumerate() {
+            println!("  {}. ID: {}, MerchantTxnId: {}, Status: {:?}, Amount: {}, CheckoutId: {:?}", 
+                    i + 1, payment.id, payment.merchant_transaction_id, payment.status, 
+                    payment.amount, payment.checkout_id);
+        }
+    }
+
+    pub fn get_payment_count(&self) -> usize {
+        let payments = self.payments.lock().unwrap();
+        payments.len()
+    }
+
+    pub fn get_subscription_count(&self) -> usize {
+        let subscriptions = self.subscriptions.lock().unwrap();
+        subscriptions.len()
     }
 }
 

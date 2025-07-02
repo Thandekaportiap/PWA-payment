@@ -5,29 +5,96 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Payment Result</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; text-align: center; }
-        .container { max-width: 600px; margin: auto; padding: 30px; border: 1px solid #ccc; border-radius: 8px; }
-        h1 { margin-bottom: 20px; }
-        .message {
-            padding: 15px;
-            border-radius: 4px;
-            font-size: 1.2em;
-            margin-top: 20px;
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            text-align: center; 
+            background-color: #f5f5f5;
         }
-        .message.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        .message.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        .message.info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
-        a {
+        .container { 
+            max-width: 600px; 
+            margin: 40px auto; 
+            padding: 30px; 
+            background: white;
+            border: 1px solid #ddd; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { 
+            margin-bottom: 20px; 
+            color: #333;
+        }
+        .message {
+            padding: 20px;
+            border-radius: 4px;
+            font-size: 1.1em;
+            margin: 20px 0;
+            transition: all 0.3s ease;
+        }
+        .message.success { 
+            background-color: #d4edda; 
+            color: #155724; 
+            border: 1px solid #c3e6cb; 
+        }
+        .message.error { 
+            background-color: #f8d7da; 
+            color: #721c24; 
+            border: 1px solid #f5c6cb; 
+        }
+        .message.info { 
+            background-color: #e7f5fe; 
+            color: #0c5460; 
+            border: 1px solid #bee5eb; 
+        }
+        .message.warning { 
+            background-color: #fff3cd; 
+            color: #856404; 
+            border: 1px solid #ffeeba; 
+        }
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .transaction-details {
+            text-align: left;
+            margin: 20px 0;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 5px;
+        }
+        .transaction-details p {
+            margin: 8px 0;
+        }
+        a.button {
             display: inline-block;
             margin-top: 20px;
-            padding: 10px 20px;
+            padding: 12px 24px;
             background-color: #007bff;
             color: white;
             text-decoration: none;
             border-radius: 5px;
+            font-weight: bold;
+            transition: background-color 0.3s;
         }
-        a:hover {
+        a.button:hover {
             background-color: #0056b3;
+        }
+        .retry-button {
+            background-color: #ffc107;
+            color: #856404;
+            margin-left: 10px;
+        }
+        .retry-button:hover {
+            background-color: #e0a800;
         }
     </style>
 </head>
@@ -35,42 +102,187 @@
     <div class="container">
         <h1>Payment Result</h1>
         <div id="resultMessage" class="message info">
-            Processing payment result...
+            <div class="loading-spinner"></div>
+            <p>Processing payment result...</p>
         </div>
-        <p>Please note: The definitive payment status is confirmed by the backend webhook.</p>
-        <a href="/">Go to Home Page</a>
+        <div id="transactionDetails" class="transaction-details" style="display: none;">
+            <p><strong>Transaction ID:</strong> <span id="txnId"></span></p>
+            <p><strong>Status:</strong> <span id="txnStatus">Checking...</span></p>
+            <p><strong>Details:</strong> <span id="txnDetails"></span></p>
+        </div>
+        <p class="note">Please note: Payment processing may take a few moments to complete.</p>
+        <div id="actionButtons">
+            <a href="/" class="button">Go to Home Page</a>
+            <a href="#" id="retryButton" class="button retry-button" style="display: none;">Check Status Again</a>
+        </div>
     </div>
 
     <script>
-document.addEventListener('DOMContentLoaded', () => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const id = urlParams.get('id');
-    const resourcePath = urlParams.get('resourcePath');
-    const resultMessageDiv = document.getElementById('resultMessage');
+        const API_BASE_URL = 'http://127.0.0.1:8080/api/v1';
+        let checkAttempts = 0;
+        const maxAttempts = 5;
+        const retryDelay = 3000; // 3 seconds between attempts
 
-    if (id && resourcePath) {
-        resultMessageDiv.classList.remove('info');
-        resultMessageDiv.classList.add('success');
-        resultMessageDiv.innerHTML = `
-            <p>Payment callback received!</p>
-            <p><strong>Transaction ID (id):</strong> ${id}</p>
-            <p><strong>Resource Path:</strong> ${resourcePath}</p>
-            <p>Your payment is being processed. Please check your account for final status.</p>
-        `;
-    } else if (id) {
-        resultMessageDiv.classList.remove('info');
-        resultMessageDiv.classList.add('success');
-        resultMessageDiv.innerHTML = `
-            <p>Transaction ID: ${id}</p>
-            <p>Payment was initiated. Awaiting final status...</p>
-        `;
-    } else {
-        resultMessageDiv.classList.remove('info');
-        resultMessageDiv.classList.add('error');
-        resultMessageDiv.textContent = 'No payment result data found.';
-    }
-});
-</script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const merchantTransactionId = urlParams.get('id');
+            const resultMessageDiv = document.getElementById('resultMessage');
+            const txnIdSpan = document.getElementById('txnId');
+            const txnStatusSpan = document.getElementById('txnStatus');
+            const txnDetailsSpan = document.getElementById('txnDetails');
+            const transactionDetailsDiv = document.getElementById('transactionDetails');
+            const retryButton = document.getElementById('retryButton');
+            
+            if (merchantTransactionId) {
+                txnIdSpan.textContent = merchantTransactionId;
+                transactionDetailsDiv.style.display = 'block';
+                checkPaymentStatus(merchantTransactionId);
+                
+                // Setup retry button
+                retryButton.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    checkAttempts = 0; // Reset attempts
+                    resultMessageDiv.className = 'message info';
+                    resultMessageDiv.innerHTML = `
+                        <div class="loading-spinner"></div>
+                        <p>Re-checking payment status...</p>
+                    `;
+                    checkPaymentStatus(merchantTransactionId);
+                });
+            } else {
+                showError('No payment result data found (missing Transaction ID).');
+            }
 
+            function checkPaymentStatus(transactionId) {
+                checkAttempts++;
+                
+                fetch(`${API_BASE_URL}/payments/status/${transactionId}`)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data.peach_response?.result) {
+                            handlePaymentResponse(data, transactionId);
+                        } else if (data.payment_details) {
+                            // Alternative response format from backend
+                            handleBackendStatus(data, transactionId);
+                        } else {
+                            throw new Error('Invalid response format from backend');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching payment status:', error);
+                        
+                        if (checkAttempts < maxAttempts) {
+                            // Try again after delay
+                            setTimeout(() => {
+                                checkPaymentStatus(transactionId);
+                            }, retryDelay);
+                        } else {
+                            showError(
+                                'Could not verify payment status with our system. ' +
+                                'The payment may still be processing. Please check back later.',
+                                true
+                            );
+                        }
+                    });
+            }
+
+            function handlePaymentResponse(data, transactionId) {
+                const resultCode = data.peach_response.result.code;
+                txnDetailsSpan.textContent = data.peach_response.result.description;
+                
+                if (resultCode.startsWith('000.000') || resultCode.startsWith('000.100')) {
+                    // Successful payment
+                    resultMessageDiv.className = 'message success';
+                    resultMessageDiv.innerHTML = '<p>Payment Completed Successfully!</p>';
+                    txnStatusSpan.textContent = 'Completed';
+                    retryButton.style.display = 'none';
+                    
+                    // Update subscription status if available
+                    if (data.peach_response.customParameters?.subscription_id) {
+                        txnDetailsSpan.textContent += ` Your subscription is now active.`;
+                    }
+                } else if (resultCode.startsWith('000.200')) {
+                    // Pending payment
+                    if (checkAttempts < maxAttempts) {
+                        resultMessageDiv.innerHTML = `
+                            <div class="loading-spinner"></div>
+                            <p>Payment is still processing (attempt ${checkAttempts} of ${maxAttempts})...</p>
+                        `;
+                        txnStatusSpan.textContent = 'Pending';
+                        setTimeout(() => {
+                            checkPaymentStatus(transactionId);
+                        }, retryDelay);
+                    } else {
+                        resultMessageDiv.className = 'message warning';
+                        resultMessageDiv.innerHTML = `
+                            <p>Payment is still processing</p>
+                            <p>This may take a few minutes. You can check back later.</p>
+                        `;
+                        txnStatusSpan.textContent = 'Still Processing';
+                        retryButton.style.display = 'inline-block';
+                    }
+                } else {
+                    // Failed payment
+                    resultMessageDiv.className = 'message error';
+                    resultMessageDiv.innerHTML = '<p>Payment Failed</p>';
+                    txnStatusSpan.textContent = 'Failed';
+                    retryButton.style.display = 'inline-block';
+                }
+            }
+
+            function handleBackendStatus(data, transactionId) {
+                // Handle alternative backend response format
+                const status = data.payment_details.status;
+                txnDetailsSpan.textContent = data.message || 'Payment processed';
+                
+                if (status === 'Completed') {
+                    resultMessageDiv.className = 'message success';
+                    resultMessageDiv.innerHTML = '<p>Payment Completed Successfully!</p>';
+                    txnStatusSpan.textContent = 'Completed';
+                    retryButton.style.display = 'none';
+                } else if (status === 'Pending') {
+                    if (checkAttempts < maxAttempts) {
+                        resultMessageDiv.innerHTML = `
+                            <div class="loading-spinner"></div>
+                            <p>Payment is still processing (attempt ${checkAttempts} of ${maxAttempts})...</p>
+                        `;
+                        txnStatusSpan.textContent = 'Pending';
+                        setTimeout(() => {
+                            checkPaymentStatus(transactionId);
+                        }, retryDelay);
+                    } else {
+                        resultMessageDiv.className = 'message warning';
+                        resultMessageDiv.innerHTML = `
+                            <p>Payment is still processing</p>
+                            <p>This may take a few minutes. You can check back later.</p>
+                        `;
+                        txnStatusSpan.textContent = 'Still Processing';
+                        retryButton.style.display = 'inline-block';
+                    }
+                } else {
+                    resultMessageDiv.className = 'message error';
+                    resultMessageDiv.innerHTML = '<p>Payment Failed</p>';
+                    txnStatusSpan.textContent = 'Failed';
+                    retryButton.style.display = 'inline-block';
+                }
+            }
+
+            function showError(message, showRetry = true) {
+                resultMessageDiv.className = 'message error';
+                resultMessageDiv.innerHTML = `<p>${message}</p>`;
+                txnStatusSpan.textContent = 'Error';
+                txnDetailsSpan.textContent = message;
+                if (showRetry) {
+                    retryButton.style.display = 'inline-block';
+                }
+                transactionDetailsDiv.style.display = 'block';
+            }
+        });
+    </script>
 </body>
 </html>
