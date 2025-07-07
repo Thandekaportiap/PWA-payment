@@ -153,24 +153,57 @@ async function createSubscription() {
 
     const selectElement = document.getElementById('subscriptionPlan');
     const planName = selectElement.value;
-    const price = parseFloat(selectElement.options[selectElement.selectedIndex].text.match(/\((R\d+)\)/)[1].substring(1));
+    
+    let price;
+    try {
+        const selectedOption = selectElement.options[selectElement.selectedIndex];
+        const priceMatch = selectedOption.text.match(/\((R\d+)\)/);
+        
+        if (!priceMatch) {
+            showMessage('subscriptionMessage', 'Could not extract price from selected plan.', 'error');
+            return;
+        }
+        
+        price = parseFloat(priceMatch[1].substring(1));
+        
+        if (isNaN(price) || price <= 0) {
+            showMessage('subscriptionMessage', 'Invalid price detected.', 'error');
+            return;
+        }
+    } catch (error) {
+        console.error('Error extracting price:', error);
+        showMessage('subscriptionMessage', 'Error processing subscription plan.', 'error');
+        return;
+    }
+
+    const requestData = {
+        user_id: currentUserId,
+        plan_name: planName,
+        price: price
+    };
 
     try {
         const response = await fetch(`${API_BASE_URL}/subscriptions/create`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                user_id: currentUserId,
-                plan_name: planName,
-                price: price
-            })
+            body: JSON.stringify(requestData)
         });
-        const data = await response.json();
+
+        const contentType = response.headers.get('content-type');
+        let data;
+
+        if (contentType && contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            const text = await response.text();
+            throw new Error(`Server responded with non-JSON: ${text}`);
+        }
+
         if (response.ok) {
             currentSubscriptionId = data.id;
             currentSubscriptionPlan = data.plan_name;
             currentSubscriptionPrice = data.price;
-            currentSubscriptionStatus = data.status; // Should be "Pending"
+            currentSubscriptionStatus = data.status;
             localStorage.setItem('currentSubscriptionId', currentSubscriptionId);
             localStorage.setItem('currentSubscriptionPlan', currentSubscriptionPlan);
             localStorage.setItem('currentSubscriptionPrice', currentSubscriptionPrice);
@@ -178,11 +211,13 @@ async function createSubscription() {
             showMessage('subscriptionMessage', `Subscription created! ID: ${data.id}, Status: ${data.status}`, 'success');
             updateSubscriptionInfoUI();
         } else {
-            showMessage('subscriptionMessage', `Error: ${JSON.stringify(data)}`, 'error');
+            console.error('Server rejected request:', data);
+            const errorMessage = data.error || data.message || JSON.stringify(data);
+            showMessage('subscriptionMessage', `Error: ${errorMessage}`, 'error');
         }
     } catch (error) {
         console.error('Error creating subscription:', error);
-        showMessage('subscriptionMessage', 'An error occurred during subscription creation.', 'error');
+        showMessage('subscriptionMessage', `Network or server error: ${error.message}`, 'error');
     }
 }
 
@@ -250,6 +285,26 @@ async function initiatePayment() {
             const checkout = Checkout.initiate({
                 key: entityId,
                 checkoutId: checkoutId,
+                options: {
+  customCSS: `
+    html, body {
+        height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    .peach-checkout {
+        height: 100% !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+    }
+
+    iframe {
+        height: 100% !important;
+    }
+  `
+},
                 events: {
                     options: {
                         theme: {

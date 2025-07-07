@@ -142,27 +142,24 @@ impl DatabaseService {
     }
 
     // Subscription operations
-    pub fn create_subscription(&self, subscription_dto: CreateSubscriptionDto) -> Result<Subscription, String> {
-        let mut subscriptions = self.subscriptions.lock().unwrap();
-        
-        let subscription = Subscription {
-            id: Uuid::new_v4(),
-            user_id: subscription_dto.user_id,
-            plan_name: subscription_dto.plan_name.clone(),
-            price: subscription_dto.price,
-            status: SubscriptionStatus::Pending,
-            start_date: None,
-            end_date: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        };
+    pub fn create_subscription(&self, dto: CreateSubscriptionDto) -> Result<Subscription, String> {
+    let mut subscriptions = self.subscriptions.lock().unwrap();
 
-        subscriptions.push(subscription.clone());
-        println!("✅ Created subscription: ID={}, Plan={}, Price={}", 
-                subscription.id, subscription.plan_name, subscription.price);
-        Ok(subscription)
-    }
+    let subscription = Subscription {
+        id: Uuid::new_v4(),
+        user_id: dto.user_id,
+        plan_name: dto.plan_name,
+        price: dto.price,
+        status: SubscriptionStatus::Pending,
+        start_date: None,
+        end_date: None,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+    };
 
+    subscriptions.push(subscription.clone());
+    Ok(subscription)
+}
     pub fn get_subscription(&self, subscription_id: &Uuid) -> Option<Subscription> {
         let subscriptions = self.subscriptions.lock().unwrap();
         subscriptions.iter().find(|s| s.id == *subscription_id).cloned()

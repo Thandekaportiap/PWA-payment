@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
     <title>Subscription & Payment Test App</title>
    <style>
         /* General Body and Container */
@@ -249,22 +251,22 @@
         }
 
         #checkout-container {
-            min-height: 600px;
-            border: 1px solid #000000;
-            border-radius: 8px;
-            overflow: hidden;
-            background-color: #ffffff;
-            margin-top: 15px;
-            width: 100%;
-            position: relative;
+               height: 100vh; 
+    max-height: 100vh;
+    border: 1px solid #000000;
+    border-radius: 8px;
+    overflow: hidden;
+    background-color: #ffffff;
+    width: 100%;
+    position: relative;
+    display: flex;
+    flex-direction: column;
         }
         
         @media (min-width: 768px) {
             #checkout-container {
                 min-height: 800px;
                 margin-top: 20px;
-                transform: scale(1.1);
-                transform-origin: top left;
                 width: 90.9%;
             }
         }
@@ -324,7 +326,7 @@
     <div class="container">
         <h1>Subscriptions & Payments</h1>
     
-        <div class="section">
+        
             <h2>User Management</h2>
             <div class="current-user-info" id="currentUserInfo" style="display: none;">
                 <p><strong>Current User:</strong> <span id="currentUserId"></span></p>
@@ -344,9 +346,9 @@
             <input type="email" id="loginEmail" placeholder="user@example.com">
             <button onclick="loginUser()">Login User</button>
             <div id="loginMessage" class="message"></div>
-        </div>
+      
 
-        <div class="section">
+        
             <h2>Subscription Management</h2>
             <div class="current-subscription-info" id="currentSubscriptionInfo" style="display: none;">
                 <p><strong>Current Subscription ID:</strong> <span id="currentSubscriptionId"></span></p>
@@ -363,16 +365,15 @@
             </select>
             <button onclick="createSubscription()" id="createSubscriptionBtn" disabled>Create Pending Subscription</button>
             <div id="subscriptionMessage" class="message"></div>
-        </div>
+        
 
-        <div class="section">
             <h2>Initiate Payment</h2>
             <button onclick="initiatePayment()" id="initiatePaymentBtn" disabled>Proceed to Payment</button>
             <div id="paymentInitiateMessage" class="message"></div>
             
             <div id="checkout-container"></div>
             <div id="peachPaymentMessage" class="message"></div>
-        </div>
+        
     </div>
       <script src="https://sandbox-checkout.peachpayments.com/js/checkout.js"></script>
     <script src="app.js"></script>

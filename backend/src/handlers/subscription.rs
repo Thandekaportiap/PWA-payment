@@ -23,6 +23,7 @@ pub struct ActivateSubscriptionRequest {
     pub payment_method: Option<PaymentMethod>,
 }
 
+
 #[post("/create")]
 pub async fn create_subscription(
     db: Data<DatabaseService>,
@@ -30,9 +31,12 @@ pub async fn create_subscription(
 ) -> Result<HttpResponse> {
     match db.create_subscription(payload.into_inner()) {
         Ok(subscription) => Ok(HttpResponse::Created().json(subscription)),
-        Err(e) => Ok(HttpResponse::BadRequest().json(format!("Error creating subscription: {}", e))),
+        Err(e) => Ok(HttpResponse::BadRequest().json(serde_json::json!({
+            "error": format!("Error creating subscription: {}", e)
+        }))),
     }
 }
+
 
 #[get("/{subscription_id}/status")]
 pub async fn get_subscription_status(
