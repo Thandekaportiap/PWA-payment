@@ -1,6 +1,12 @@
 // static/app.js
 
-const API_BASE_URL = 'http://127.0.0.1:8080/api/v1'; 
+// Configuration - can be overridden by environment
+const config = {
+    apiBaseUrl: window.ENV?.API_BASE_URL || 'http://127.0.0.1:8080/api/v1',
+    peachEntityId: window.ENV?.PEACH_ENTITY_ID || "8ac7a4c8961da56701961e61c57a0241"
+};
+
+const API_BASE_URL = config.apiBaseUrl; 
 
 let currentUserId = localStorage.getItem('currentUserId') || null;
 let currentSubscriptionId = localStorage.getItem('currentSubscriptionId') || null;
@@ -8,6 +14,35 @@ let currentSubscriptionPlan = localStorage.getItem('currentSubscriptionPlan') ||
 let currentSubscriptionPrice = localStorage.getItem('currentSubscriptionPrice') || null;
 let currentSubscriptionStatus = localStorage.getItem('currentSubscriptionStatus') || null;
 
+// Track timeouts to prevent memory leaks
+let activeTimeouts = new Set();
+
+
+// --- Utility Functions ---
+function validateEmail(email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+}
+
+function validateName(name) {
+    return name && name.trim().length >= 2;
+}
+
+function sanitizeInput(input) {
+    if (typeof input !== 'string') return input;
+    return input.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+}
+
+function handleApiError(response, defaultMessage) {
+    if (response.status === 400) {
+        return 'Invalid input. Please check your data and try again.';
+    } else if (response.status === 404) {
+        return 'Resource not found. Please verify the information.';
+    } else if (response.status >= 500) {
+        return 'Server error. Please try again later.';
+    }
+    return defaultMessage;
+}
 
 // --- UI Update Functions ---
 function showMessage(elementId, message, type) {
@@ -66,11 +101,22 @@ function updateSubscriptionInfoUI() {
 
 async function registerUser() {
     hideMessage('registerMessage');
-    const email = document.getElementById('registerEmail').value;
-    const name = document.getElementById('registerName').value;
+    const email = sanitizeInput(document.getElementById('registerEmail').value.trim());
+    const name = sanitizeInput(document.getElementById('registerName').value.trim());
 
+    // Validate inputs
     if (!email || !name) {
         showMessage('registerMessage', 'Please fill in both email and name.', 'error');
+        return;
+    }
+
+    if (!validateEmail(email)) {
+        showMessage('registerMessage', 'Please enter a valid email address.', 'error');
+        return;
+    }
+
+    if (!validateName(name)) {
+        showMessage('registerMessage', 'Name must be at least 2 characters long.', 'error');
         return;
     }
 
@@ -89,20 +135,26 @@ async function registerUser() {
             showMessage('registerMessage', `User registered! ID: ${data.id}`, 'success');
             updateUserInfoUI();
         } else {
-            showMessage('registerMessage', `Error: ${data}`, 'error');
+            const errorMessage = handleApiError(response, `Error: ${data}`);
+            showMessage('registerMessage', errorMessage, 'error');
         }
     } catch (error) {
         console.error('Error registering user:', error);
-        showMessage('registerMessage', 'An error occurred during registration.', 'error');
+        showMessage('registerMessage', 'Network error. Please check your connection and try again.', 'error');
     }
 }
 
 async function loginUser() {
     hideMessage('loginMessage');
-    const email = document.getElementById('loginEmail').value;
+    const email = sanitizeInput(document.getElementById('loginEmail').value.trim());
 
     if (!email) {
         showMessage('loginMessage', 'Please enter an email to login.', 'error');
+        return;
+    }
+
+    if (!validateEmail(email)) {
+        showMessage('loginMessage', 'Please enter a valid email address.', 'error');
         return;
     }
 
@@ -266,7 +318,7 @@ async function initiatePayment() {
             throw new Error('Peach Payments checkout not loaded');
         }
 
-        const entityId = "8ac7a4c8961da56701961e61c57a0241"; // Verify this is correct
+        const entityId = config.peachEntityId;
         
         // Initialize checkout with proper error handling
         try {
@@ -320,9 +372,11 @@ async function initiatePayment() {
                         // window.location.href = `/payment-result.html?id=${txnId}`;
      
                 // Add a small delay before redirect to ensure the message is seen
-                setTimeout(() => {
+                const timeoutId = setTimeout(() => {
                     window.location.href = `/payment-result.html?id=${txnId}`;
+                    activeTimeouts.delete(timeoutId);
                 }, 1500);
+                activeTimeouts.add(timeoutId);
                     },
 
                     
@@ -381,26 +435,48 @@ function displayNotifications(notifications) {
         return;
     }
 
-    let html = '<div class="notifications-list">';
+    // Clear container
+    container.innerHTML = '';
+    
+    const notificationsDiv = document.createElement('div');
+    notificationsDiv.className = 'notifications-list';
+    
     notifications.forEach(notification => {
         const date = new Date(notification.created_at).toLocaleDateString();
         const acknowledgedClass = notification.acknowledged ? 'acknowledged' : 'unacknowledged';
         
-        html += `
-            <div class="notification-item ${acknowledgedClass}">
-                <p><strong>${notification.message}</strong></p>
-                <p class="notification-date">Date: ${date}</p>
-                <p class="notification-status">Status: ${notification.acknowledged ? 'Read' : 'Unread'}</p>
-                ${!notification.acknowledged ? 
-                    `<button onclick="acknowledgeNotification('${notification.id}')" class="ack-btn">Mark as Read</button>` : 
-                    ''
-                }
-            </div>
-        `;
+        const notificationDiv = document.createElement('div');
+        notificationDiv.className = `notification-item ${acknowledgedClass}`;
+        
+        const messageP = document.createElement('p');
+        const strongEl = document.createElement('strong');
+        strongEl.textContent = notification.message; // Safe text content
+        messageP.appendChild(strongEl);
+        
+        const dateP = document.createElement('p');
+        dateP.className = 'notification-date';
+        dateP.textContent = `Date: ${date}`;
+        
+        const statusP = document.createElement('p');
+        statusP.className = 'notification-status';
+        statusP.textContent = `Status: ${notification.acknowledged ? 'Read' : 'Unread'}`;
+        
+        notificationDiv.appendChild(messageP);
+        notificationDiv.appendChild(dateP);
+        notificationDiv.appendChild(statusP);
+        
+        if (!notification.acknowledged) {
+            const ackBtn = document.createElement('button');
+            ackBtn.className = 'ack-btn';
+            ackBtn.textContent = 'Mark as Read';
+            ackBtn.onclick = () => acknowledgeNotification(notification.id);
+            notificationDiv.appendChild(ackBtn);
+        }
+        
+        notificationsDiv.appendChild(notificationDiv);
     });
-    html += '</div>';
     
-    container.innerHTML = html;
+    container.appendChild(notificationsDiv);
     showMessage('notificationMessage', `Found ${notifications.length} notifications`, 'success');
 }
 
@@ -492,6 +568,15 @@ async function checkSubscriptionStatus() {
 
 
 
+// --- Cleanup Functions ---
+function cleanup() {
+    // Clear all active timeouts
+    activeTimeouts.forEach(timeoutId => {
+        clearTimeout(timeoutId);
+    });
+    activeTimeouts.clear();
+}
+
 // --- Initialize UI on Load ---
 document.addEventListener('DOMContentLoaded', () => {
     updateUserInfoUI();
@@ -505,3 +590,6 @@ document.addEventListener('DOMContentLoaded', () => {
     hideMessage('paymentInitiateMessage');
     hideMessage('peachPaymentMessage');
 });
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', cleanup);

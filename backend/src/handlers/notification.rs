@@ -15,25 +15,52 @@ pub struct NotificationResponse {
 
 #[get("/user/{user_id}")]
 pub async fn get_notifications(
-    _db: Data<DatabaseService>,
+    db: Data<DatabaseService>,
     path: Path<String>,
 ) -> Result<HttpResponse> {
-    let _user_id = path.into_inner();
+    let user_id = path.into_inner();
     
-    // TODO: Implement actual notification retrieval from database
-    // For now, return empty array
-    let notifications: Vec<NotificationResponse> = vec![];
-    
-    Ok(HttpResponse::Ok().json(notifications))
+    match db.get_user_notifications(&user_id).await {
+        Ok(notifications) => {
+            let response: Vec<NotificationResponse> = notifications
+                .into_iter()
+                .map(|n| NotificationResponse {
+                    id: n.id,
+                    user_id: n.user_id,
+                    subscription_id: n.subscription_id,
+                    message: n.message,
+                    acknowledged: n.acknowledged,
+                    created_at: n.created_at.to_rfc3339(),
+                })
+                .collect();
+            
+            Ok(HttpResponse::Ok().json(response))
+        }
+        Err(e) => {
+            eprintln!("Error fetching notifications: {}", e);
+            Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "Failed to fetch notifications"
+            })))
+        }
+    }
 }
 
 #[post("/{notification_id}/acknowledge")]
 pub async fn mark_notification_read(
-    _db: Data<DatabaseService>,
-    _path: Path<String>,
+    db: Data<DatabaseService>,
+    path: Path<String>,
 ) -> Result<HttpResponse> {
-    // TODO: Implement notification acknowledgment
-    Ok(HttpResponse::Ok().json(serde_json::json!({
-        "message": "Notification marked as read"
-    })))
+    let notification_id = path.into_inner();
+    
+    match db.acknowledge_notification(&notification_id).await {
+        Ok(_) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "message": "Notification marked as read"
+        }))),
+        Err(e) => {
+            eprintln!("Error acknowledging notification: {}", e);
+            Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "Failed to acknowledge notification"
+            })))
+        }
+    }
 }
