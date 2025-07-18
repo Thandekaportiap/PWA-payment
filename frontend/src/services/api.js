@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:3001/api';// Ensure this matches your Rust backend port
+const API_BASE_URL = 'http://localhost:8080/api/v1'; // Fixed: Changed from 3001/api to 8080/api/v1 to match backend
 
 class ApiError extends Error {
   constructor(message, status) {
@@ -51,7 +51,7 @@ export const formatDate = (isoString) => {
 
 // --- User API ---
 export const createUser = async (userData) => {
-  const response = await fetch(`${API_BASE_URL}/users`, {
+  const response = await fetch(`${API_BASE_URL}/users/register`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -73,7 +73,7 @@ export const listUsers = async () => {
 
 // --- Subscription API ---
 export const createSubscription = async (subscriptionData) => {
-  const response = await fetch(`${API_BASE_URL}/subscriptions`, {
+  const response = await fetch(`${API_BASE_URL}/subscriptions/create`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -110,7 +110,7 @@ export const updateSubscription = async (subscriptionId, updateData) => {
 
 // --- Payment API ---
 export const initiatePayment = async (paymentData) => {
-  const response = await fetch(`${API_BASE_URL}/payment/initiate`, {
+  const response = await fetch(`${API_BASE_URL}/payments/initiate`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -120,14 +120,13 @@ export const initiatePayment = async (paymentData) => {
   return handleResponse(response);
 };
 
-export const getPaymentStatus = async (checkRequestData) => {
-    // This expects { payment_id, peach_checkout_id, merchant_transaction_id } as per your Rust backend
-    const response = await fetch(`${API_BASE_URL}/payment/status`, {
-      method: 'POST', // Backend expects POST
+export const getPaymentStatus = async (merchantTransactionId) => {
+    // Backend expects GET request with merchant_transaction_id in path
+    const response = await fetch(`${API_BASE_URL}/payments/status/${merchantTransactionId}`, {
+      method: 'GET',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(checkRequestData),
     });
     return handleResponse(response);
 };
@@ -139,8 +138,8 @@ export const listPayments = async (filters = {}) => {
   return handleResponse(response);
 };
 
-// Modified pollPaymentStatus to pass correct parameters matching backend's CheckPaymentStatusRequest
-export const pollPaymentStatus = (internalPaymentId, peachCheckoutId, merchantTransactionId, interval = 3000, maxAttempts = 10) => {
+// Modified pollPaymentStatus to use the merchant transaction ID for status checking
+export const pollPaymentStatus = (merchantTransactionId, interval = 3000, maxAttempts = 10) => {
   return new Promise((resolve, reject) => {
     let attempts = 0;
     const poll = async () => {
@@ -148,12 +147,8 @@ export const pollPaymentStatus = (internalPaymentId, peachCheckoutId, merchantTr
         attempts++;
         console.log(`🔄 Polling payment status (attempt ${attempts}/${maxAttempts})`);
         
-        // Pass all three required IDs with correct key names to getPaymentStatus
-        const status = await getPaymentStatus({ 
-            payment_id: internalPaymentId, 
-            peach_checkout_id: peachCheckoutId, 
-            merchant_transaction_id: merchantTransactionId 
-        });
+        // Use the merchant transaction ID to get payment status
+        const status = await getPaymentStatus(merchantTransactionId);
         
         // Check if payment is in a final state
         if (status.status === 'Completed' || status.status === 'Failed' || status.status === 'Canceled') { // Use capitalized statuses from Rust enum
@@ -196,7 +191,7 @@ export const processVoucher = async (voucherData) => {
 
 // --- Health Check ---
 export const healthCheck = async () => {
-  const response = await fetch(`${API_BASE_URL}/health`);
+  const response = await fetch(`http://localhost:8080/health`); // Health check is at root level, not under /api/v1
   if (!response.ok) {
     throw new Error('API is not healthy');
   }

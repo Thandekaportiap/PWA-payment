@@ -3,7 +3,7 @@ mod handlers;
 mod services;
 mod tasks;
 
-use actix_web::{web, App, HttpServer, middleware::Logger};
+use actix_web::{web, App, HttpServer, middleware::Logger, HttpResponse, Result};
 use actix_web::web::Data;
 use std::env;
 use std::sync::Arc;
@@ -13,6 +13,15 @@ use services::{
     database::DatabaseService,
     peach::PeachPaymentService,
 };
+
+// Simple health check endpoint
+async fn health_check() -> Result<HttpResponse> {
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "status": "healthy",
+        "service": "payment_system",
+        "timestamp": chrono::Utc::now()
+    })))
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -63,6 +72,7 @@ async fn main() -> std::io::Result<()> {
             )
             .app_data(Data::new(database_service.clone()))
             .app_data(Data::new(peach_service.clone()))
+            .route("/health", web::get().to(health_check))
             .service(
                 web::scope("/api/v1")
                     .service(
