@@ -56,9 +56,12 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
             .wrap(
                 Cors::default()
-                    .allow_any_origin()
-                    .allow_any_method()
-                    .allow_any_header()
+                    .allowed_origin("http://127.0.0.1:8080")
+                    .allowed_origin("http://localhost:8080") 
+                    .allowed_origin("http://127.0.0.1:3000")  // Common dev server
+                    .allowed_origin("http://localhost:3000")   // Common dev server
+                    .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+                    .allowed_headers(vec!["Content-Type", "Authorization", "Accept"])
                     .supports_credentials()
             )
             .app_data(Data::new(database_service.clone()))

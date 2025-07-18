@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Environment Configuration Example</title>
+</head>
+<body>
+    <h1>Environment Configuration Example</h1>
+    <p>This file shows how to override the default configuration for different environments.</p>
+    
+    <!-- Production environment example -->
+    <script>
+        // Override default configuration for production
+        window.ENV = {
+            API_BASE_URL: 'https://your-api-domain.com/api/v1',
+            PEACH_ENTITY_ID: 'your-production-entity-id'
+        };
+    </script>
+    
+    <!-- Load the application -->
+    <script src="config.js"></script>
+    
+    <div id="config-display">
+        <h2>Current Configuration:</h2>
+        <pre id="config-output"></pre>
+    </div>
+    
+    <script>
+        document.getElementById('config-output').textContent = JSON.stringify(window.ENV, null, 2);
+    </script>
+    
+    <div>
+        <h2>Instructions:</h2>
+        <ol>
+            <li><strong>Development:</strong> Use the default configuration in config.js</li>
+            <li><strong>Production:</strong> Add a script tag before config.js to override window.ENV</li>
+            <li><strong>Docker:</strong> Set environment variables and template them into a script tag</li>
+            <li><strong>CDN:</strong> Create environment-specific config files</li>
+        </ol>
+        
+        <h3>Example for Docker/Server-side templating:</h3>
+        <code>
+            &lt;script&gt;<br>
+            &nbsp;&nbsp;window.ENV = {<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;API_BASE_URL: '${API_BASE_URL}',<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;PEACH_ENTITY_ID: '${PEACH_ENTITY_ID}'<br>
+            &nbsp;&nbsp;};<br>
+            &lt;/script&gt;
+        </code>
+    </div>
+</body>
+</html>

@@ -644,6 +644,61 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         Ok(())
     }
 
+    pub async fn get_user_notifications(
+        &self,
+        user_id: &str,
+    ) -> Result<Vec<crate::models::notification::Notification>, String> {
+        let query = "SELECT * FROM notification WHERE user_id = $user_id ORDER BY created_at DESC";
+        
+        match self.db.query(query).bind(("user_id", user_id)).await {
+            Ok(mut result) => {
+                let notifications: Vec<crate::models::notification::Notification> = result
+                    .take(0)
+                    .map_err(|e| format!("Failed to extract notifications: {}", e))?;
+                Ok(notifications)
+            }
+            Err(e) => Err(format!("Database error: {}", e)),
+        }
+    }
+
+    pub async fn acknowledge_notification(&self, notification_id: &str) -> Result<(), String> {
+        let query = "UPDATE notification SET acknowledged = true WHERE id = $notification_id";
+        
+        match self.db.query(query).bind(("notification_id", notification_id)).await {
+            Ok(_) => {
+                println!("✅ Notification {} marked as acknowledged", notification_id);
+                Ok(())
+            }
+            Err(e) => Err(format!("Database error: {}", e)),
+        }
+    }
+
+    pub async fn create_test_notification(&self, user_id: String, message: String) -> Result<(), String> {
+        let notification_id = Uuid::new_v4().simple().to_string();
+        let now = Utc::now();
+
+        let query = r#"
+            CREATE notification:$record_id SET
+                user_id = $user_id,
+                subscription_id = "test-subscription",
+                message = $message,
+                acknowledged = false,
+                created_at = $created_at
+        "#;
+
+        self.db
+            .query(query)
+            .bind(("record_id", notification_id))
+            .bind(("user_id", user_id.clone()))
+            .bind(("message", message.clone()))
+            .bind(("created_at", now))
+            .await
+            .map_err(|e| e.to_string())?;
+        
+        println!("📝 Test notification created for user {}: {}", user_id, message);
+        Ok(())
+    }
+
         
     // ---------------------
     // Debug utilities (converted to async)
