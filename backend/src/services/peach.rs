@@ -8,7 +8,7 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use std::collections::BTreeMap;
 
-use crate::models::payment::PaymentMethod;
+use crate::models::payment::{PaymentMethod, PaymentMethodDetail};
 
 #[derive(Clone)]
 pub struct PeachPaymentService {
@@ -223,6 +223,226 @@ impl PeachPaymentService {
         println!("Calculated signature: {}", calculated);
         println!("Provided signature:   {}", signature);
         calculated == signature
+    }
+
+    /// Extract payment method details from a successful transaction
+    pub async fn get_payment_details(&self, payment_id: &str) -> Result<Value, Box<dyn Error + Send + Sync>> {
+        let url = format!(
+            "{}/v1/payments/{}?entityId={}",
+            self.v1_base_url, payment_id, self.v1_entity_id
+        );
+
+        let response = self.client
+            .get(&url)
+            .bearer_auth(&self.v1_access_token)
+            .send()
+            .await?;
+
+        let status = response.status();
+        let body_text = response.text().await?;
+
+        println!("Get Payment Details API response status: {}", status);
+        println!("Get Payment Details API response body: {}", body_text);
+
+        if !status.is_success() {
+            return Err(format!("Get Payment Details API error: Status {}, Body: {}", status, body_text).into());
+        }
+
+        let body: Value = serde_json::from_str(&body_text)?;
+        Ok(body)
+    }
+
+    /// Create a payment method detail from Peach payment response
+    pub fn extract_payment_method_detail(&self, payment_response: &Value, user_id: uuid::Uuid) -> Result<PaymentMethodDetail, Box<dyn Error + Send + Sync>> {
+        let payment_type = payment_response
+            .get("paymentType")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        let payment_method = match payment_type {
+            "DB" => {
+                // Check for card details
+                if let Some(card) = payment_response.get("card") {
+                    PaymentMethod::Card
+                } else if payment_response.get("customParameters").is_some() {
+                    // Check custom parameters for payment method type
+                    let custom_params = payment_response.get("customParameters").unwrap();
+                    if custom_params.get("paymentBrand").and_then(|v| v.as_str()) == Some("EFT") {
+                        PaymentMethod::EFT
+                    } else if custom_params.get("paymentBrand").and_then(|v| v.as_str()) == Some("SCAN_TO_PAY") {
+                        PaymentMethod::ScanToPay
+                    } else {
+                        PaymentMethod::Card // Default fallback
+                    }
+                } else {
+                    PaymentMethod::Card // Default fallback
+                }
+            },
+            _ => PaymentMethod::Card,
+        };
+
+        let mut detail = PaymentMethodDetail {
+            id: uuid::Uuid::new_v4(),
+            user_id,
+            payment_method: payment_method.clone(),
+            peach_registration_id: payment_response
+                .get("registrationId")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            card_last_four: None,
+            card_brand: None,
+            expiry_month: None,
+            expiry_year: None,
+            bank_name: None,
+            is_default: false,
+            is_active: true,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        // Extract card-specific details
+        if let Some(card) = payment_response.get("card") {
+            detail.card_last_four = card
+                .get("last4Digits")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            
+            detail.card_brand = card
+                .get("brand")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            
+            if let Some(expiry) = card.get("expiryMonth") {
+                detail.expiry_month = expiry.as_u64().map(|v| v as u8);
+            }
+            
+            if let Some(expiry) = card.get("expiryYear") {
+                detail.expiry_year = expiry.as_u64().map(|v| v as u16);
+            }
+        }
+
+        // Extract bank details for EFT
+        if payment_method == PaymentMethod::EFT {
+            detail.bank_name = payment_response
+                .get("customParameters")
+                .and_then(|cp| cp.get("bankName"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+        }
+
+        Ok(detail)
+    }
+
+    /// Process a recurring payment using stored registration ID
+    pub async fn process_recurring_payment(
+        &self,
+        registration_id: &str,
+        amount: f64,
+        merchant_transaction_id: &str,
+        user_id: &str,
+        subscription_id: &str,
+    ) -> Result<Value, Box<dyn Error + Send + Sync>> {
+        let token = self.get_oauth_token().await?;
+        
+        let nonce = uuid::Uuid::new_v4().to_string();
+
+        let payload = json!({
+            "authentication": {
+                "entityId": self.v2_entity_id,
+            },
+            "amount": amount,
+            "currency": "ZAR",
+            "merchantTransactionId": merchant_transaction_id,
+            "paymentType": "DB",
+            "nonce": nonce,
+            "registrationId": registration_id,
+            "customer": {
+                "merchantCustomerId": user_id
+            },
+            "customParameters": {
+                "subscription_id": subscription_id,
+                "payment_type": "recurring"
+            },
+            "notificationUrl": self.notification_url
+        });
+
+        println!("Recurring Payment Payload: {}", payload);
+
+        let response = self.client
+            .post(&self.v2_checkout_url.replace("/checkouts", "/payments"))
+            .header("content-type", "application/json")
+            .bearer_auth(token)
+            .json(&payload)
+            .send()
+            .await?;
+
+        let status = response.status();
+        let body_text = response.text().await?;
+
+        println!("Recurring Payment response status: {}", status);
+        println!("Recurring Payment response body: {}", body_text);
+
+        if !status.is_success() {
+            return Err(format!("Recurring Payment error: Status {}, Body: {}", status, body_text).into());
+        }
+
+        let body: Value = serde_json::from_str(&body_text)?;
+        Ok(body)
+    }
+
+    /// Register a payment method for future recurring payments
+    pub async fn register_payment_method(
+        &self,
+        user_id: &str,
+        payment_method: &PaymentMethod,
+    ) -> Result<Value, Box<dyn Error + Send + Sync>> {
+        let token = self.get_oauth_token().await?;
+        
+        let nonce = uuid::Uuid::new_v4().to_string();
+        let merchant_transaction_id = format!("REG_{}", uuid::Uuid::new_v4().simple());
+
+        let payload = json!({
+            "authentication": {
+                "entityId": self.v2_entity_id,
+            },
+            "amount": "0.00", // Registration transaction
+            "currency": "ZAR",
+            "merchantTransactionId": merchant_transaction_id,
+            "paymentType": "RG", // Registration
+            "nonce": nonce,
+            "customer": {
+                "merchantCustomerId": user_id
+            },
+            "customParameters": {
+                "payment_method": format!("{}", payment_method),
+                "registration_purpose": "recurring_payments"
+            },
+            "notificationUrl": self.notification_url,
+            "shopperResultUrl": self.shopper_result_url
+        });
+
+        println!("Payment Method Registration Payload: {}", payload);
+
+        let response = self.client
+            .post(&self.v2_checkout_url)
+            .header("content-type", "application/json")
+            .bearer_auth(token)
+            .json(&payload)
+            .send()
+            .await?;
+
+        let status = response.status();
+        let body_text = response.text().await?;
+
+        println!("Registration response status: {}", status);
+        println!("Registration response body: {}", body_text);
+
+        if !status.is_success() {
+            return Err(format!("Registration error: Status {}, Body: {}", status, body_text).into());
+        }
+
+        let body: Value = serde_json::from_str(&body_text)?;
+        Ok(body)
     }
 
     pub fn validate_config(&self) -> Result<(), Box<dyn Error + Send + Sync>> {

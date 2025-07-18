@@ -132,6 +132,44 @@ export const getPaymentStatus = async (checkRequestData) => {
     return handleResponse(response);
 };
 
+// Get user's stored payment methods
+export const getUserPaymentMethods = async (userId) => {
+  const response = await fetch(`${API_BASE_URL}/payments/payment-methods/${userId}`);
+  return handleResponse(response);
+};
+
+// Store a payment method from a completed payment
+export const storePaymentMethod = async (storeData) => {
+  const response = await fetch(`${API_BASE_URL}/payments/payment-methods/store`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(storeData),
+  });
+  return handleResponse(response);
+};
+
+// Create a recurring payment using stored payment method
+export const createRecurringPayment = async (recurringData) => {
+  const response = await fetch(`${API_BASE_URL}/payments/recurring`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(recurringData),
+  });
+  return handleResponse(response);
+};
+
+// Deactivate a stored payment method
+export const deactivatePaymentMethod = async (userId, paymentMethodId) => {
+  const response = await fetch(`${API_BASE_URL}/payments/payment-methods/${userId}/${paymentMethodId}`, {
+    method: 'DELETE',
+  });
+  return handleResponse(response);
+};
+
 // Note: listPayments is not fully implemented in backend examples
 export const listPayments = async (filters = {}) => {
   // In a real app, you'd construct query params from filters
@@ -221,6 +259,10 @@ export default {
   getPaymentStatus,
   listPayments,
   pollPaymentStatus,
+  getUserPaymentMethods,
+  storePaymentMethod,
+  createRecurringPayment,
+  deactivatePaymentMethod,
 
   // Utilities
   healthCheck,

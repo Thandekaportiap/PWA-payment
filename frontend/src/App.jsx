@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import PaymentForm from './components/PaymentForm';
 import SubscriptionStatus from './components/SubscriptionStatus';
+import PaymentMethodManager from './components/PaymentMethodManager';
 import { createUser, createSubscription, getSubscription, healthCheck, getUser } from './services/api';
 import './styles/main.css';
 
@@ -150,6 +151,20 @@ function App() {
     localStorage.removeItem('user_id'); // Clear stored user ID
   };
 
+  const handleRecurringPaymentSuccess = async (paymentResult) => {
+    console.log('✅ Recurring payment successful:', paymentResult);
+    
+    // Refresh subscription data to show updated status
+    try {
+      if (user && user.id) {
+        const updatedSubscription = await getSubscription(user.id);
+        setSubscription(updatedSubscription);
+      }
+    } catch (err) {
+      console.error('Failed to refresh subscription after recurring payment:', err);
+    }
+  };
+
   const renderUserSetupForm = () => (
     <div className="step-container">
       <h2>👤 User Information</h2>
@@ -244,6 +259,14 @@ function App() {
         <SubscriptionStatus
           subscription={subscription}
           user={user}
+        />
+      )}
+
+      {user && (
+        <PaymentMethodManager
+          user={user}
+          subscription={subscription}
+          onRecurringPaymentSuccess={handleRecurringPaymentSuccess}
         />
       )}
 

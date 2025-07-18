@@ -1,4 +1,4 @@
-use actix_web::{HttpResponse, Result, post, get};
+use actix_web::{HttpResponse, Result, post, get, delete};
 use actix_web::web::{Data, Json, Path, Query};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,7 @@ use crate::services::peach::PeachPaymentService;
 use actix_web::web; // Add this line
 use crate::{
     models::{
-        payment::{PaymentStatus, CreatePaymentDto},
+        payment::{PaymentStatus, CreatePaymentDto, CreateRecurringPaymentDto, StorePaymentMethodDto, PaymentMethodDetail},
         subscription::SubscriptionStatus,
     },
     services::{database::DatabaseService},
@@ -321,6 +321,56 @@ pub async fn payment_callback(
             if let Some(payment) = db.get_payment_by_merchant_id(&merchant_transaction_id) {
                 let _ = db.update_payment_status(&merchant_transaction_id, &PaymentStatus::Completed);
 
+                // Extract and store payment method details from webhook data
+                let payment_id = form_map.get("id").cloned();
+                if let Some(peach_payment_id) = payment_id {
+                    let _ = db.update_payment_peach_id(&merchant_transaction_id, &peach_payment_id);
+                    
+                    // Auto-store payment method for future recurring payments
+                    // This happens automatically for successful payments unless it's already a recurring payment
+                    if !payment.is_recurring {
+                        tokio::spawn({
+                            let peach_service = peach_service.clone();
+                            let db = db.clone();
+                            let payment_clone = payment.clone();
+                            let peach_payment_id_clone = peach_payment_id.clone();
+                            
+                            async move {
+                                // Wait a bit for Peach to finalize the payment details
+                                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                                
+                                match peach_service.get_payment_details(&peach_payment_id_clone).await {
+                                    Ok(payment_details) => {
+                                        match peach_service.extract_payment_method_detail(&payment_details, payment_clone.user_id) {
+                                            Ok(payment_method_detail) => {
+                                                let store_dto = StorePaymentMethodDto {
+                                                    payment_id: payment_clone.id,
+                                                    set_as_default: Some(true), // Auto-set as default for convenience
+                                                };
+                                                
+                                                match db.store_payment_method(store_dto, payment_method_detail) {
+                                                    Ok(stored_method) => {
+                                                        println!("✅ Auto-stored payment method: {:?}", stored_method.payment_method);
+                                                    },
+                                                    Err(e) => {
+                                                        println!("⚠️ Failed to auto-store payment method: {}", e);
+                                                    }
+                                                }
+                                            },
+                                            Err(e) => {
+                                                println!("⚠️ Failed to extract payment method details: {}", e);
+                                            }
+                                        }
+                                    },
+                                    Err(e) => {
+                                        println!("⚠️ Failed to get payment details for auto-store: {}", e);
+                                    }
+                                }
+                            }
+                        });
+                    }
+                }
+
                 if let Some(ref sub_id) = payment.subscription_id {
                     let _ = db.activate_subscription(sub_id);
                 }
@@ -344,4 +394,233 @@ pub async fn payment_callback(
     }
 
     HttpResponse::Ok().body("Webhook received")
+}
+
+// GET /payment-methods/{user_id}
+#[get("/payment-methods/{user_id}")]
+pub async fn get_user_payment_methods(
+    db: Data<DatabaseService>,
+    path: Path<String>,
+) -> Result<HttpResponse> {
+    let user_id = match uuid::Uuid::parse_str(&path.into_inner()) {
+        Ok(id) => id,
+        Err(_) => return Ok(HttpResponse::BadRequest().json(ApiResponseError {
+            message: "Invalid user ID format".to_string(),
+            details: None,
+        })),
+    };
+
+    let payment_methods = db.get_user_payment_methods(&user_id);
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "payment_methods": payment_methods,
+        "count": payment_methods.len()
+    })))
+}
+
+// POST /payment-methods/store
+#[post("/payment-methods/store")]
+pub async fn store_payment_method(
+    db: Data<DatabaseService>,
+    peach_service: Data<PeachPaymentService>,
+    payload: Json<StorePaymentMethodDto>,
+) -> Result<HttpResponse> {
+    // Get the payment record to verify it's completed
+    let payment = match db.get_payment(&payload.payment_id) {
+        Some(p) => p,
+        None => return Ok(HttpResponse::NotFound().json(ApiResponseError {
+            message: "Payment not found".to_string(),
+            details: None,
+        })),
+    };
+
+    if payment.status != PaymentStatus::Completed {
+        return Ok(HttpResponse::BadRequest().json(ApiResponseError {
+            message: "Payment is not completed".to_string(),
+            details: None,
+        }));
+    }
+
+    // Get payment details from Peach to extract payment method information
+    let payment_details = match &payment.peach_payment_id {
+        Some(peach_id) => {
+            match peach_service.get_payment_details(peach_id).await {
+                Ok(details) => details,
+                Err(e) => return Ok(HttpResponse::InternalServerError().json(ApiResponseError {
+                    message: "Failed to retrieve payment details from Peach".to_string(),
+                    details: Some(e.to_string()),
+                })),
+            }
+        },
+        None => {
+            // Fallback: check payment status to get details
+            match &payment.checkout_id {
+                Some(checkout_id) => {
+                    match peach_service.check_payment_status(checkout_id).await {
+                        Ok(details) => details,
+                        Err(e) => return Ok(HttpResponse::InternalServerError().json(ApiResponseError {
+                            message: "Failed to retrieve payment details".to_string(),
+                            details: Some(e.to_string()),
+                        })),
+                    }
+                },
+                None => return Ok(HttpResponse::BadRequest().json(ApiResponseError {
+                    message: "No payment details available to extract payment method".to_string(),
+                    details: None,
+                })),
+            }
+        }
+    };
+
+    // Extract payment method detail from Peach response
+    let payment_method_detail = match peach_service.extract_payment_method_detail(&payment_details, payment.user_id) {
+        Ok(detail) => detail,
+        Err(e) => return Ok(HttpResponse::InternalServerError().json(ApiResponseError {
+            message: "Failed to extract payment method details".to_string(),
+            details: Some(e.to_string()),
+        })),
+    };
+
+    // Store the payment method in database
+    match db.store_payment_method(payload.into_inner(), payment_method_detail) {
+        Ok(stored_method) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "message": "Payment method stored successfully",
+            "payment_method": stored_method
+        }))),
+        Err(e) => Ok(HttpResponse::InternalServerError().json(ApiResponseError {
+            message: "Failed to store payment method".to_string(),
+            details: Some(e),
+        })),
+    }
+}
+
+// POST /recurring
+#[post("/recurring")]
+pub async fn create_recurring_payment(
+    db: Data<DatabaseService>,
+    peach_service: Data<PeachPaymentService>,
+    payload: Json<CreateRecurringPaymentDto>,
+) -> Result<HttpResponse> {
+    let subscription_id = &payload.subscription_id;
+    let subscription = match db.get_subscription(subscription_id) {
+        Some(sub) => sub,
+        None => return Ok(HttpResponse::NotFound().json(ApiResponseError {
+            message: "Subscription not found".to_string(),
+            details: None,
+        })),
+    };
+
+    // Get the payment method details
+    let payment_methods = db.get_user_payment_methods(&payload.user_id);
+    let payment_method = payment_methods
+        .iter()
+        .find(|pm| pm.id == payload.payment_method_detail_id)
+        .ok_or("Payment method not found")?;
+
+    if !payment_method.is_active {
+        return Ok(HttpResponse::BadRequest().json(ApiResponseError {
+            message: "Payment method is not active".to_string(),
+            details: None,
+        }));
+    }
+
+    // Create recurring payment record
+    let payment_record = match db.create_recurring_payment(payload.into_inner()) {
+        Ok(payment) => payment,
+        Err(e) => return Ok(HttpResponse::InternalServerError().json(ApiResponseError {
+            message: "Error creating recurring payment record".to_string(),
+            details: Some(e.to_string()),
+        })),
+    };
+
+    let user_id_str = payment_record.user_id.to_string();
+    let subscription_id_str = subscription_id.to_string();
+
+    // Process recurring payment using stored registration ID
+    if let Some(registration_id) = &payment_method.peach_registration_id {
+        match peach_service
+            .process_recurring_payment(
+                registration_id,
+                payload.amount,
+                &payment_record.merchant_transaction_id,
+                &user_id_str,
+                &subscription_id_str,
+            )
+            .await
+        {
+            Ok(peach_response) => {
+                // Update payment status based on response
+                let result_code = peach_response
+                    .get("result")
+                    .and_then(|r| r.get("code"))
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("");
+
+                let status = if result_code.starts_with("000.000") || result_code.starts_with("000.100") {
+                    PaymentStatus::Completed
+                } else {
+                    PaymentStatus::Failed
+                };
+
+                let _ = db.update_payment_status(&payment_record.merchant_transaction_id, &status);
+
+                if status == PaymentStatus::Completed {
+                    // Extend subscription
+                    let _ = db.activate_subscription(&subscription_id);
+                }
+
+                Ok(HttpResponse::Ok().json(serde_json::json!({
+                    "message": "Recurring payment processed",
+                    "payment_id": payment_record.id,
+                    "merchant_transaction_id": payment_record.merchant_transaction_id,
+                    "status": format!("{:?}", status),
+                    "peach_response": peach_response
+                })))
+            }
+            Err(e) => Ok(HttpResponse::InternalServerError().json(ApiResponseError {
+                message: "Failed to process recurring payment".to_string(),
+                details: Some(e.to_string()),
+            })),
+        }
+    } else {
+        Ok(HttpResponse::BadRequest().json(ApiResponseError {
+            message: "Payment method does not support recurring payments".to_string(),
+            details: Some("No registration ID available".to_string()),
+        }))
+    }
+}
+
+// DELETE /payment-methods/{user_id}/{payment_method_id}
+#[delete("/payment-methods/{user_id}/{payment_method_id}")]
+pub async fn deactivate_payment_method(
+    db: Data<DatabaseService>,
+    path: Path<(String, String)>,
+) -> Result<HttpResponse> {
+    let (user_id_str, payment_method_id_str) = path.into_inner();
+    
+    let user_id = match uuid::Uuid::parse_str(&user_id_str) {
+        Ok(id) => id,
+        Err(_) => return Ok(HttpResponse::BadRequest().json(ApiResponseError {
+            message: "Invalid user ID format".to_string(),
+            details: None,
+        })),
+    };
+
+    let payment_method_id = match uuid::Uuid::parse_str(&payment_method_id_str) {
+        Ok(id) => id,
+        Err(_) => return Ok(HttpResponse::BadRequest().json(ApiResponseError {
+            message: "Invalid payment method ID format".to_string(),
+            details: None,
+        })),
+    };
+
+    match db.deactivate_payment_method(&user_id, &payment_method_id) {
+        Ok(()) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "message": "Payment method deactivated successfully"
+        }))),
+        Err(e) => Ok(HttpResponse::NotFound().json(ApiResponseError {
+            message: "Failed to deactivate payment method".to_string(),
+            details: Some(e),
+        })),
+    }
 }

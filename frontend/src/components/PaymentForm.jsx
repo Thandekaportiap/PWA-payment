@@ -201,6 +201,7 @@ const PaymentForm = ({ user, onPaymentSuccess }) => {
             >
               <option value="card">Credit/Debit Card</option>
               <option value="eft">Instant EFT</option>
+              <option value="scantopay">Scan to Pay</option>
               <option value="onevoucher">1Voucher</option>
             </select>
           </div>
@@ -224,6 +225,20 @@ const PaymentForm = ({ user, onPaymentSuccess }) => {
                 <p>• Payment processing time: 1-2 business days</p>
                 <p>• Please use the provided reference number</p>
                 <p>• Keep your proof of payment for records</p>
+              </div>
+            </div>
+          )}
+
+          {paymentMethod === 'scantopay' && (
+            <div className="payment-method-form">
+              <h4>📱 Scan to Pay</h4>
+              <p className="payment-info">
+                Use your mobile banking app to scan the QR code and complete the payment instantly.
+              </p>
+              <div className="scantopay-info">
+                <p>• Supported by major South African banks</p>
+                <p>• Instant payment confirmation</p>
+                <p>• Secure and convenient mobile payment</p>
               </div>
             </div>
           )}
@@ -253,7 +268,12 @@ const PaymentForm = ({ user, onPaymentSuccess }) => {
                 Processing...
               </>
             ) : (
-              `Pay R100.00 with ${paymentMethod === 'card' ? 'Card' : paymentMethod === 'eft' ? 'EFT' : '1Voucher'}`
+              `Pay R100.00 with ${
+                paymentMethod === 'card' ? 'Card' : 
+                paymentMethod === 'eft' ? 'EFT' : 
+                paymentMethod === 'scantopay' ? 'Scan to Pay' :
+                '1Voucher'
+              }`
             )}
           </button>
         </form>

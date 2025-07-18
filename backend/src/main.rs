@@ -93,7 +93,10 @@ async fn main() -> std::io::Result<()> {
                             .service(handlers::payment::check_payment_status)
                             .service(handlers::payment::handle_payment_callback_get)
                             .service(handlers::payment::payment_callback)
-
+                            .service(handlers::payment::get_user_payment_methods)
+                            .service(handlers::payment::store_payment_method)
+                            .service(handlers::payment::create_recurring_payment)
+                            .service(handlers::payment::deactivate_payment_method)
                     )
                     .service(
                         web::scope("/subscriptions")
