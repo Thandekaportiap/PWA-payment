@@ -58,6 +58,8 @@ async fn main() -> std::io::Result<()> {
                 Cors::default()
                     .allowed_origin("http://127.0.0.1:8080")
                     .allowed_origin("http://localhost:8080") 
+                    .allowed_origin("http://127.0.0.1:8001")  // Frontend dev server
+                    .allowed_origin("http://localhost:8001")   // Frontend dev server
                     .allowed_origin("http://127.0.0.1:3000")  // Common dev server
                     .allowed_origin("http://localhost:3000")   // Common dev server
                     .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])

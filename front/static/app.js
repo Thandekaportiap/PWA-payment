@@ -59,15 +59,21 @@ function hideMessage(elementId) {
 
 function updateUserInfoUI() {
     const userInfoDiv = document.getElementById('currentUserInfo');
+    const createSubscriptionBtn = document.getElementById('createSubscriptionBtn');
+    
     if (currentUserId) {
-        document.getElementById('currentUserId').textContent = currentUserId;
-        document.getElementById('currentUserEmail').textContent = localStorage.getItem('currentUserEmail') || 'N/A';
-        document.getElementById('currentUserName').textContent = localStorage.getItem('currentUserName') || 'N/A';
-        userInfoDiv.style.display = 'block';
-        document.getElementById('createSubscriptionBtn').disabled = false;
+        const currentUserIdEl = document.getElementById('currentUserId');
+        const currentUserEmailEl = document.getElementById('currentUserEmail');
+        const currentUserNameEl = document.getElementById('currentUserName');
+        
+        if (currentUserIdEl) currentUserIdEl.textContent = currentUserId;
+        if (currentUserEmailEl) currentUserEmailEl.textContent = localStorage.getItem('currentUserEmail') || 'N/A';
+        if (currentUserNameEl) currentUserNameEl.textContent = localStorage.getItem('currentUserName') || 'N/A';
+        if (userInfoDiv) userInfoDiv.style.display = 'block';
+        if (createSubscriptionBtn) createSubscriptionBtn.disabled = false;
     } else {
-        userInfoDiv.style.display = 'none';
-        document.getElementById('createSubscriptionBtn').disabled = true;
+        if (userInfoDiv) userInfoDiv.style.display = 'none';
+        if (createSubscriptionBtn) createSubscriptionBtn.disabled = true;
     }
 }
 
@@ -77,23 +83,28 @@ function updateSubscriptionInfoUI() {
     const processVoucherBtn = document.getElementById('processVoucherBtn');
 
     if (currentSubscriptionId) {
-        document.getElementById('currentSubscriptionId').textContent = currentSubscriptionId;
-        document.getElementById('currentSubscriptionPlan').textContent = currentSubscriptionPlan;
-        document.getElementById('currentSubscriptionPrice').textContent = currentSubscriptionPrice;
-        document.getElementById('currentSubscriptionStatus').textContent = currentSubscriptionStatus;
-        subInfoDiv.style.display = 'block';
+        const currentSubscriptionIdEl = document.getElementById('currentSubscriptionId');
+        const currentSubscriptionPlanEl = document.getElementById('currentSubscriptionPlan');
+        const currentSubscriptionPriceEl = document.getElementById('currentSubscriptionPrice');
+        const currentSubscriptionStatusEl = document.getElementById('currentSubscriptionStatus');
+        
+        if (currentSubscriptionIdEl) currentSubscriptionIdEl.textContent = currentSubscriptionId;
+        if (currentSubscriptionPlanEl) currentSubscriptionPlanEl.textContent = currentSubscriptionPlan;
+        if (currentSubscriptionPriceEl) currentSubscriptionPriceEl.textContent = currentSubscriptionPrice;
+        if (currentSubscriptionStatusEl) currentSubscriptionStatusEl.textContent = currentSubscriptionStatus;
+        if (subInfoDiv) subInfoDiv.style.display = 'block';
 
         if (currentSubscriptionStatus === 'Pending') {
-            initiatePaymentBtn.disabled = false;
-            processVoucherBtn.disabled = false;
+            if (initiatePaymentBtn) initiatePaymentBtn.disabled = false;
+            if (processVoucherBtn) processVoucherBtn.disabled = false;
         } else {
-            initiatePaymentBtn.disabled = true;
-            processVoucherBtn.disabled = true;
+            if (initiatePaymentBtn) initiatePaymentBtn.disabled = true;
+            if (processVoucherBtn) processVoucherBtn.disabled = true;
         }
     } else {
-        subInfoDiv.style.display = 'none';
-        initiatePaymentBtn.disabled = true;
-        processVoucherBtn.disabled = true;
+        if (subInfoDiv) subInfoDiv.style.display = 'none';
+        if (initiatePaymentBtn) initiatePaymentBtn.disabled = true;
+        if (processVoucherBtn) processVoucherBtn.disabled = true;
     }
 }
 

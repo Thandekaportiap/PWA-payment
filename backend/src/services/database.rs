@@ -678,7 +678,8 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         let now = Utc::now();
 
         let query = r#"
-            CREATE notification:$record_id SET
+            CREATE notification SET
+                id = $record_id,
                 user_id = $user_id,
                 subscription_id = "test-subscription",
                 message = $message,
@@ -686,17 +687,23 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
                 created_at = $created_at
         "#;
 
-        self.db
+        match self.db
             .query(query)
-            .bind(("record_id", notification_id))
+            .bind(("record_id", notification_id.clone()))
             .bind(("user_id", user_id.clone()))
             .bind(("message", message.clone()))
             .bind(("created_at", now))
-            .await
-            .map_err(|e| e.to_string())?;
-        
-        println!("📝 Test notification created for user {}: {}", user_id, message);
-        Ok(())
+            .await 
+        {
+            Ok(_) => {
+                println!("📝 Test notification created for user {}: {}", user_id, message);
+                Ok(())
+            }
+            Err(e) => {
+                eprintln!("❌ Database error creating notification: {}", e);
+                Err(format!("Database error: {}", e))
+            }
+        }
     }
 
         
