@@ -1,17 +1,16 @@
 use actix_web::{HttpResponse, Result, post, get};
 use actix_web::web::{Data, Json, Path, Query};
-use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use actix_web::HttpRequest;
 use crate::services::peach::PeachPaymentService;
-use actix_web::web; // Add this line
+use actix_web::web;
 use crate::{
     models::{
-        payment::{PaymentStatus, CreatePaymentDto},
+        payment::{PaymentStatus, CreatePaymentDto, PaymentMethod},
         subscription::SubscriptionStatus,
     },
-    services::{database::DatabaseService},
+    services::database::DatabaseService,
 };
 
 #[derive(Debug, Serialize)]
@@ -22,13 +21,17 @@ pub struct ApiResponseError {
 }
 
 #[derive(Deserialize)]
+pub struct RecurringChargeRequest {
+    pub user_id: String,
+    pub amount: f64,
+    pub initial_transaction_id: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct PaymentCallbackQuery {
-    pub id: Option<String>,
-    #[serde(rename = "resourcePath")]
     pub resource_path: Option<String>,
 }
 
-// POST /initiate
 #[post("/initiate")]
 pub async fn initiate_payment(
     db: Data<DatabaseService>,
@@ -36,57 +39,61 @@ pub async fn initiate_payment(
     payload: Json<CreatePaymentDto>,
 ) -> Result<HttpResponse> {
     let subscription_id = &payload.subscription_id;
-    let subscription = match db.get_subscription(subscription_id) {
+    let subscription = match db.get_subscription(subscription_id).await {  // ✅ Added .await
         Some(sub) => sub,
         None => return Ok(HttpResponse::NotFound().json(ApiResponseError {
             message: "Subscription not found".to_string(),
             details: None,
         })),
     };
-
+    
     if subscription.status != SubscriptionStatus::Pending {
         return Ok(HttpResponse::BadRequest().json(ApiResponseError {
             message: "Subscription is not pending".to_string(),
             details: None,
         }));
     }
-
-    let initial_payment_id = uuid::Uuid::new_v4(); // Generate a new UUID for the payment
-    let merchant_transaction_id = format!("TXN_{}", initial_payment_id.simple()); // Prefix with TXN_ for internal tracking
-
+    
     let payment_dto = CreatePaymentDto {
         user_id: payload.user_id.clone(),
         subscription_id: payload.subscription_id.clone(),
         amount: payload.amount,
-        payment_method: None,
+        payment_method: payload.payment_method.clone(),
     };
-
-    let payment_record = match db.create_payment(payment_dto) {
+    
+    let payment_record = match db.create_payment(payment_dto).await {  // ✅ Added .await
         Ok(payment) => payment,
         Err(e) => return Ok(HttpResponse::InternalServerError().json(ApiResponseError {
             message: "Error creating payment record".to_string(),
             details: Some(e.to_string()),
         })),
     };
-
-
-     let merchant_transaction_id = payment_record.merchant_transaction_id.clone();
+    
     let user_id_str = payload.user_id.to_string();
     let subscription_id_str = payload.subscription_id.to_string();
-
-
+    
     match peach_service
-         .initiate_checkout_api_v2(&user_id_str, &subscription_id_str, payload.amount, &payment_record.merchant_transaction_id)
+        .initiate_checkout_api_v2_with_tokenization(
+            &user_id_str,
+            &subscription_id_str,
+            payload.amount,
+            &payment_record.merchant_transaction_id,
+        )
         .await
     {
         Ok(peach_response) => {
-           if let Some(checkout_id) = peach_response.get("checkoutId").and_then(|v| v.as_str()) {
-    let _ = db.update_payment_checkout_id(&payment_record.merchant_transaction_id, checkout_id);
-
-    Ok(HttpResponse::Ok().json(serde_json::json!({
-        "checkoutId": checkout_id,
-        "merchantTransactionId": payment_record.merchant_transaction_id
-    })))
+            if let Some(checkout_id) = peach_response.get("checkoutId").and_then(|v| v.as_str()) {
+                let _ = db.update_payment_checkout_id(&payment_record.merchant_transaction_id, checkout_id).await;  // ✅ Added .await
+                
+                if let Some(token) = peach_response.get("registrationId").and_then(|v| v.as_str()) {
+                    let _ = db.update_payment_recurring_token(&payment_record.merchant_transaction_id, token).await;  // ✅ Added .await
+                }
+                
+                Ok(HttpResponse::Ok().json(serde_json::json!({
+                    "checkoutId": checkout_id,
+                    "merchantTransactionId": payment_record.merchant_transaction_id,
+                    "registrationId": peach_response.get("registrationId").unwrap_or(&serde_json::Value::Null)
+                })))
             } else {
                 Ok(HttpResponse::InternalServerError().json(ApiResponseError {
                     message: "Peach Payments response missing 'checkoutId'".to_string(),
@@ -101,7 +108,34 @@ pub async fn initiate_payment(
     }
 }
 
-// GET /status/{merchant_transaction_id}
+#[post("/charge-recurring")]
+pub async fn charge_recurring_payment(
+    db: Data<DatabaseService>,
+    peach: Data<PeachPaymentService>,
+    payload: Json<RecurringChargeRequest>,
+) -> Result<HttpResponse> {
+    let token = match db.get_recurring_token_by_user(&payload.user_id).await {  // ✅ Added .await
+        Some(t) => t,
+        None => {
+            return Ok(HttpResponse::BadRequest().json(ApiResponseError {
+                message: "No stored card token found for user".to_string(),
+                details: None,
+            }));
+        }
+    };
+    
+    match peach
+        .execute_recurring_payment(&token, payload.amount, &payload.initial_transaction_id)
+        .await
+    {
+        Ok(response) => Ok(HttpResponse::Ok().json(response)),
+        Err(e) => Ok(HttpResponse::InternalServerError().json(ApiResponseError {
+            message: "Failed to execute recurring payment".to_string(),
+            details: Some(e.to_string()),
+        })),
+    }
+}
+
 #[get("/status/{merchant_transaction_id}")]
 pub async fn check_payment_status(
     db: Data<DatabaseService>,
@@ -109,7 +143,8 @@ pub async fn check_payment_status(
     path: Path<String>,
 ) -> Result<HttpResponse> {
     let merchant_transaction_id = path.into_inner();
-    let payment = match db.get_payment_by_merchant_id(&merchant_transaction_id) {
+    
+    let payment = match db.get_payment_by_merchant_id(&merchant_transaction_id).await {  // ✅ Added .await
         Some(p) => p,
         None => {
             return Ok(HttpResponse::NotFound().json(ApiResponseError {
@@ -118,18 +153,22 @@ pub async fn check_payment_status(
             }));
         }
     };
-
+    
     let checkout_id = match &payment.checkout_id {
         Some(id) => id,
         None => {
             return Ok(HttpResponse::Ok().json(serde_json::json!({
                 "status": "info",
                 "message": "No checkout ID available",
-                "payment_details": payment
+                "payment_id": payment.id,
+                "merchant_transaction_id": payment.merchant_transaction_id,
+                "payment_method": format!("{:?}", payment.payment_method),
+                "status": format!("{:?}", payment.status),
+                "amount": payment.amount
             })));
         }
     };
-
+    
     match peach_service.check_payment_status(checkout_id).await {
         Ok(status_response) => {
             let new_status = status_response
@@ -145,20 +184,24 @@ pub async fn check_payment_status(
                         PaymentStatus::Failed
                     }
                 });
-
+            
             if let Some(status) = new_status.clone() {
-                let _ = db.update_payment_status(&merchant_transaction_id, &status);
-
+                let _ = db.update_payment_status(&merchant_transaction_id, &status).await;  // ✅ Added .await
+                
                 if status == PaymentStatus::Completed {
                     if let Some(subscription_id) = payment.subscription_id {
-                        let _ = db.activate_subscription(&subscription_id);
+                        let _ = db.activate_subscription(&subscription_id).await;  // ✅ Added .await
                     }
                 }
             }
-
+            
             Ok(HttpResponse::Ok().json(serde_json::json!({
                 "peach_response": status_response,
-                "updated_status": new_status.map(|s| format!("{:?}", s)).unwrap_or("unknown".to_string())
+                "updated_status": new_status.map(|s| format!("{:?}", s)).unwrap_or("unknown".to_string()),
+                "payment_id": payment.id,
+                "merchant_transaction_id": payment.merchant_transaction_id,
+                "payment_method": format!("{:?}", payment.payment_method),
+                "amount": payment.amount
             })))
         }
         Err(e) => Ok(HttpResponse::InternalServerError().json(ApiResponseError {
@@ -168,7 +211,91 @@ pub async fn check_payment_status(
     }
 }
 
-// GET /callback (legacy Peach redirect fallback)
+#[get("/checkout-status/{checkout_id}")]
+pub async fn get_checkout_status_and_store(
+    peach_service: Data<PeachPaymentService>,
+    db: Data<DatabaseService>,
+    path: Path<String>,
+) -> Result<HttpResponse> {
+    let checkout_id = path.into_inner();
+    
+    match peach_service.get_checkout_status(&checkout_id).await {
+        Ok(status_response) => {
+            let merchant_txn_id = status_response
+                .get("merchantTransactionId")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            
+            let result_code = status_response
+                .get("result")
+                .and_then(|r| r.get("code"))
+                .and_then(|c| c.as_str())
+                .unwrap_or_default();
+            
+            let payment_brand = status_response
+                .get("paymentBrand")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            
+            let payment_status = if result_code.starts_with("000.000") || result_code.starts_with("000.100") {
+                PaymentStatus::Completed
+            } else if result_code.starts_with("000.200") {
+                PaymentStatus::Pending
+            } else {
+                PaymentStatus::Failed
+            };
+            
+            if let Some(ref txn_id) = merchant_txn_id {
+                let _ = db.update_payment_status(txn_id, &payment_status).await;  // ✅ Added .await
+                
+                if payment_status == PaymentStatus::Completed {
+                    if let Some(payment) = db.get_payment_by_merchant_id(txn_id).await {  // ✅ Added .await
+                        if let Some(subscription_id) = payment.subscription_id {
+                            let _ = db.activate_subscription(&subscription_id).await;  // ✅ Added .await
+                            
+                            if let Some(brand_str) = payment_brand.clone() {
+                                let method = match brand_str.to_lowercase().as_str() {
+                                    "visa" | "mastercard" | "amex" => PaymentMethod::Card,
+                                                                        "eft" => PaymentMethod::EFT,
+                                    "1voucher" => PaymentMethod::Voucher,
+                                    "scan_to_pay" => PaymentMethod::ScanToPay,
+                                    _ => PaymentMethod::Card,
+                                };
+                                
+                                let _ = db.update_subscription_payment_details(&subscription_id, method, Some(brand_str)).await;  // ✅ Added .await
+                            }
+                        }
+                    }
+                }
+            }
+            
+            Ok(HttpResponse::Ok().json(serde_json::json!({
+                "checkout_id": checkout_id,
+                "merchant_transaction_id": merchant_txn_id,
+                "result_code": result_code,
+                "payment_brand": payment_brand,
+                "updated_status": format!("{:?}", payment_status),
+                "raw_response": status_response
+            })))
+        }
+        Err(e) => Ok(HttpResponse::InternalServerError().json(ApiResponseError {
+            message: "Failed to get checkout status".to_string(),
+            details: Some(e.to_string()),
+        })),
+    }
+}
+
+pub async fn handle_payment_callback(query: Query<PaymentCallbackQuery>) -> HttpResponse {
+    let query = query.into_inner();
+    if let Some(resource_path) = query.resource_path {
+        println!("Resource path: {}", resource_path);
+        // Process further...
+    } else {
+        println!("No resource path provided");
+    }
+    HttpResponse::Ok().finish()
+}
+
 #[get("/callback")]
 pub async fn handle_payment_callback_get(
     query: Query<PaymentCallbackQuery>,
@@ -190,7 +317,7 @@ pub async fn handle_payment_callback_get(
                     } else {
                         "failure"
                     };
-
+                    
                     return Ok(HttpResponse::Found()
                         .insert_header((
                             "Location",
@@ -214,7 +341,7 @@ pub async fn handle_payment_callback_get(
             }
         }
     }
-
+    
     Ok(HttpResponse::BadRequest().json(serde_json::json!({
         "status": "error",
         "message": "Invalid or missing resource path"
@@ -233,7 +360,6 @@ fn create_signature_payload(form_data: &HashMap<String, String>) -> String {
     params.sort_by(|a, b| a.0.cmp(b.0));
     
     // Concatenate key+value pairs (no separators)
-    // serde_urlencoded already decoded the values for us
     params
         .into_iter()
         .map(|(key, value)| format!("{}{}", key, value))
@@ -241,14 +367,15 @@ fn create_signature_payload(form_data: &HashMap<String, String>) -> String {
         .join("")
 }
 
-// POST /callback (webhook)
 #[post("/callback")]
 pub async fn payment_callback(
-    req: HttpRequest,
+    _req: HttpRequest,
     body: web::Bytes,
     peach_service: web::Data<PeachPaymentService>,
     db: web::Data<DatabaseService>,
 ) -> HttpResponse {
+    println!("🔔 Webhook received at /callback");
+    
     // 1. Log raw incoming data
     let body_str = match std::str::from_utf8(&body) {
         Ok(s) => s,
@@ -257,10 +384,11 @@ pub async fn payment_callback(
             return HttpResponse::BadRequest().body("Invalid UTF-8");
         }
     };
+    
     println!("📩 Raw webhook body: {}", body_str);
     println!("Body length: {} bytes", body.len());
-
-    // 2. Parse form data to get all parameters
+    
+    // 2. Parse form data
     let form_map: HashMap<String, String> = match serde_urlencoded::from_bytes(&body) {
         Ok(map) => map,
         Err(e) => {
@@ -268,80 +396,96 @@ pub async fn payment_callback(
             return HttpResponse::BadRequest().body("Invalid form data");
         }
     };
-
-    let provided_signature = form_map.get("signature")
-        .map(|s| s.as_str())
-        .unwrap_or("");
-
+    
+    let provided_signature = form_map.get("signature").map(|s| s.as_str()).unwrap_or("");
     if provided_signature.is_empty() {
         eprintln!("❌ No signature provided in webhook");
         return HttpResponse::BadRequest().body("Missing signature");
     }
-
-    // 3. Create signature payload using Peach Payments format
-    let signature_payload = create_signature_payload(&form_map);
     
-    println!("🔍 Original body: {}", body_str);
-    println!("🔍 Signature payload (Peach format): {}", signature_payload);
+    // 3. Create and validate signature
+    let signature_payload = create_signature_payload(&form_map);
+    println!("🔍 Signature payload: {}", signature_payload);
     println!("🔍 Provided signature: {}", provided_signature);
-
-    // 4. Validate signature using the properly formatted payload
+    
     if !peach_service.validate_webhook_signature(signature_payload.as_bytes(), provided_signature) {
         eprintln!("❌ Signature validation failed");
-        eprintln!("Expected format: key1value1key2value2... (sorted alphabetically)");
         return HttpResponse::Unauthorized().body("Invalid signature");
     }
-
+    
     println!("✅ Webhook signature validated successfully");
-
-    // Extract important fields
+    
+    // 4. Extract fields
     let status_code = form_map.get("result.code").cloned().unwrap_or_default();
     let merchant_transaction_id = form_map
         .get("merchantTransactionId")
         .cloned()
         .unwrap_or_default();
-    
-    // Handle both encoded and unencoded parameter names for subscription_id
     let subscription_id = form_map
         .get("customParameters[subscription_id]")
         .or_else(|| form_map.get("customParameters%5Bsubscription_id%5D"))
         .cloned();
-
+    
     println!(
         "🧾 Parsed: result.code={}, transaction_id={}, subscription_id={:?}",
         status_code, merchant_transaction_id, subscription_id
     );
-
-    // Process based on status code
+    
+    // 5. Process based on status code
     match status_code.as_str() {
         "000.000.000" | "000.100.110" => {
             println!("✅ Payment successful");
-
-            // Fetch the payment record from DB
-            if let Some(payment) = db.get_payment_by_merchant_id(&merchant_transaction_id) {
-                let _ = db.update_payment_status(&merchant_transaction_id, &PaymentStatus::Completed);
-
+            if let Some(payment) = db.get_payment_by_merchant_id(&merchant_transaction_id).await {  // ✅ Added .await
+                let _ = db.update_payment_status(&merchant_transaction_id, &PaymentStatus::Completed).await;  // ✅ Added .await
+                
                 if let Some(ref sub_id) = payment.subscription_id {
-                    let _ = db.activate_subscription(sub_id);
+                    let _ = db.activate_subscription(sub_id).await;  // ✅ Added .await
+                    
+                    if let Some(payment_brand_str) = form_map.get("paymentBrand").cloned() {
+                        let brand_lc = payment_brand_str.to_lowercase();
+                        let method = match brand_lc.as_str() {
+                            "visa" | "mastercard" | "amex" => PaymentMethod::Card,
+                            "eft" | "ozow" => PaymentMethod::EFT,
+                            "1voucher" | "1foryou" => PaymentMethod::Voucher,
+                            "scan_to_pay" | "scantopay" => PaymentMethod::ScanToPay,
+                            _ => {
+                                eprintln!("⚠️ Unknown paymentBrand: '{}', defaulting to Card", brand_lc);
+                                PaymentMethod::Card
+                            }
+                        };
+                        
+                        let _ = db.update_subscription_payment_details(
+                            sub_id,
+                            method.clone(),
+                            Some(payment_brand_str.clone()),
+                        ).await;  // ✅ Added .await
+                        
+                        println!(
+                            "🔄 Updated subscription {} with payment method {:?} and brand {}",
+                            sub_id, method, payment_brand_str
+                        );
+                    } else {
+                        println!("ℹ️ No paymentBrand found in webhook for subscription {}", sub_id);
+                    }
                 }
             } else {
                 println!("⚠️ No payment found for merchantTransactionId: {}", merchant_transaction_id);
             }
-        },
+        }
         "100.396.104" => {
             println!("⚠️ Payment uncertain/cancelled by user");
-            let _ = db.update_payment_status(&merchant_transaction_id, &PaymentStatus::Failed);
-        },
+            let _ = db.update_payment_status(&merchant_transaction_id, &PaymentStatus::Failed).await;  // ✅ Added .await
+        }
         "000.200.100" => {
             println!("ℹ️ Checkout created - no action needed");
-        },
+        }
         "000.200.000" => {
             println!("ℹ️ Payment pending - no action needed");
-        },
+        }
         _ => {
             println!("⚠️ Unhandled result.code: {}", status_code);
         }
     }
-
+    
     HttpResponse::Ok().body("Webhook received")
 }

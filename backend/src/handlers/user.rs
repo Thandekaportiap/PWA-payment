@@ -1,28 +1,100 @@
-use actix_web::{HttpResponse, Result, get, post};
+use actix_web::{HttpResponse, Result, get, post, web};
 use actix_web::web::{Data, Json, Path};
-use uuid::Uuid;
+use serde::{Deserialize, Serialize};
 use crate::services::database::DatabaseService;
 use crate::models::user::CreateUserDto;
+
+#[derive(Deserialize, Debug)]
+pub struct RegisterUserRequest {
+    pub email: String,
+    pub name: String,
+}
+
+#[derive(Serialize)]
+pub struct UserResponse {
+    pub id: String,
+    pub email: String,
+    pub name: String,
+}
+
+#[derive(Serialize)]
+pub struct ErrorResponse {
+    pub error: String,
+}
 
 #[post("/register")]
 pub async fn register_user(
     db: Data<DatabaseService>,
-    payload: Json<CreateUserDto>,
+    payload: Json<RegisterUserRequest>,
 ) -> Result<HttpResponse> {
-    match db.create_user(payload.into_inner()) {
-        Ok(user) => Ok(HttpResponse::Created().json(user)),
-        Err(e) => Ok(HttpResponse::BadRequest().json(format!("Error creating user: {}", e))),
+    println!("📝 Register request received: {:?}", payload);
+    
+    // Validate input
+    if payload.email.is_empty() || payload.name.is_empty() {
+        return Ok(HttpResponse::BadRequest().json(ErrorResponse {
+            error: "Email and name are required".to_string(),
+        }));
+    }
+
+    let dto = CreateUserDto {
+        email: payload.email.clone(),
+        name: payload.name.clone(),
+    };
+
+    match db.create_user(dto).await {
+        Ok(user) => {
+            println!("✅ User created successfully: {}", user.email);
+            Ok(HttpResponse::Ok().json(UserResponse {
+                id: user.id,
+                email: user.email,
+                name: user.name,
+            }))
+        },
+        Err(e) => {
+            println!("❌ Failed to create user: {}", e);
+            Ok(HttpResponse::BadRequest().json(ErrorResponse {
+                error: format!("Failed to create user: {}", e),
+            }))
+        },
+    }
+}
+
+#[get("/email/{email}")]
+pub async fn get_user_by_email(
+    db: Data<DatabaseService>,
+    path: Path<String>,
+) -> Result<HttpResponse> {
+    let email = path.into_inner();
+    println!("🔍 Looking up user by email: {}", email);
+    
+    match db.get_user_by_email(&email).await {
+        Some(user) => Ok(HttpResponse::Ok().json(UserResponse {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+        })),
+        None => Ok(HttpResponse::NotFound().json(ErrorResponse {
+            error: "User not found".to_string(),
+        })),
     }
 }
 
 #[get("/{user_id}")]
 pub async fn get_user(
     db: Data<DatabaseService>,
-    path: Path<Uuid>,
+    path: Path<String>,
 ) -> Result<HttpResponse> {
     let user_id = path.into_inner();
-    match db.get_user(&user_id) {
-        Some(user) => Ok(HttpResponse::Ok().json(user)),
-        None => Ok(HttpResponse::NotFound().json("User not found")),
+    println!("🔍 Looking up user by ID: {}", user_id);
+    
+    match db.get_user(&user_id).await {
+        Some(user) => Ok(HttpResponse::Ok().json(UserResponse {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+        })),
+        None => Ok(HttpResponse::NotFound().json(ErrorResponse {
+            error: "User not found".to_string(),
+        })),
     }
 }

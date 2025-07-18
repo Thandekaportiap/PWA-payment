@@ -319,6 +319,76 @@
                 font-size: 16px;
             }
         }
+
+        /* Add to your existing CSS */
+.notifications-list {
+    margin-top: 15px;
+}
+
+.notification-item {
+    background-color: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 15px;
+    margin-bottom: 10px;
+    position: relative;
+}
+
+.notification-item.unacknowledged {
+    border-left: 4px solid #007bff;
+    background-color: #e7f3ff;
+}
+
+.notification-item.acknowledged {
+    border-left: 4px solid #28a745;
+    background-color: #f8f9fa;
+    opacity: 0.8;
+}
+
+.notification-date {
+    font-size: 12px;
+    color: #666;
+    margin: 5px 0;
+}
+
+.notification-status {
+    font-size: 12px;
+    font-weight: bold;
+    margin: 5px 0;
+}
+
+.ack-btn {
+    background-color: #28a745;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    margin-top: 10px;
+    width: auto;
+}
+
+.ack-btn:hover {
+    background-color: #218838;
+}
+
+@media (min-width: 768px) {
+    .notification-item {
+        padding: 20px;
+    }
+    
+    .notification-date,
+    .notification-status {
+        font-size: 14px;
+    }
+    
+    .ack-btn {
+        font-size: 14px;
+        padding: 10px 16px;
+    }
+}
+
     </style>
    
 </head>
@@ -359,7 +429,7 @@
             <h3>Create Subscription</h3>
             <label for="subscriptionPlan">Plan Name:</label>
             <select id="subscriptionPlan">
-                <option value="Basic">Basic (R100)</option>
+                <option value="Basic">Basic (R10)</option>
                 <option value="Premium">Premium (R250)</option>
                 <option value="Elite">Elite (R500)</option>
             </select>
@@ -373,6 +443,24 @@
             
             <div id="checkout-container"></div>
             <div id="peachPaymentMessage" class="message"></div>
+
+            <!-- Add this section after the payment section -->
+<div class="section">
+    <h2>Notifications</h2>
+    <button onclick="checkNotifications()" id="checkNotificationsBtn">Check Notifications</button>
+    <div id="notificationMessage" class="message"></div>
+    <div id="notificationsList"></div>
+</div>
+
+<div class="section">
+    <h2>Subscription Management</h2>
+    <button onclick="checkSubscriptionStatus()" id="checkStatusBtn">Refresh Subscription Status</button>
+    <div id="subscriptionStatusMessage" class="message"></div>
+    
+    <button onclick="renewSubscription()" id="renewSubscriptionBtn">Manual Renewal</button>
+    <div id="renewalMessage" class="message"></div>
+</div>
+
         
     </div>
       <script src="https://sandbox-checkout.peachpayments.com/js/checkout.js"></script>

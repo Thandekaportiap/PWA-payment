@@ -107,19 +107,7 @@ async function loginUser() {
     }
 
     try {
-        // In a real app, login would involve password. Here we simulate by finding user by email
-        // and setting currentUserId. Backend doesn't have a login by email endpoint, so we simulate.
-        // For testing purposes, we'll just check if the email exists from previously registered.
-        // A proper login would return the user ID and confirm credentials.
-        // For now, let's assume if the email exists, we can "log in".
-        // This part needs a proper backend endpoint for "get user by email" or "login".
-
-        // As a workaround for testing, we can register the user if they don't exist
-        // or prompt them to register.
-        // For now, let's just make sure a user is set as "current" if their ID is known.
-        // The current backend doesn't support "get user by email".
-        // So, for this frontend, logging in via email is symbolic.
-        // We'll just assume `registerUser` is the primary way to get a `currentUserId`.
+    
 
         const storedEmail = localStorage.getItem('currentUserEmail');
         const storedId = localStorage.getItem('currentUserId');
@@ -329,8 +317,15 @@ async function initiatePayment() {
                         }
                         
                         showMessage('peachPaymentMessage', 'Payment completed successfully!', 'success');
-                        window.location.href = `/payment-result.html?id=${txnId}`;
+                        // window.location.href = `/payment-result.html?id=${txnId}`;
+     
+                // Add a small delay before redirect to ensure the message is seen
+                setTimeout(() => {
+                    window.location.href = `/payment-result.html?id=${txnId}`;
+                }, 1500);
                     },
+
+                    
                     onCancelled: (event) => {
                         console.log("Payment Cancelled:", event);
                         showMessage('peachPaymentMessage', 'Payment cancelled by user', 'error');
@@ -353,7 +348,149 @@ async function initiatePayment() {
         console.error('Payment initiation error:', error);
         showMessage('paymentInitiateMessage', `Error: ${error.message}`, 'error');
     }
+}// Add notification functions
+async function checkNotifications() {
+    if (!currentUserId) {
+        showMessage('notificationMessage', 'Please log in to check notifications.', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/notifications/user/${currentUserId}`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+            displayNotifications(data);
+        } else {
+            showMessage('notificationMessage', `Error: ${data.message || 'Failed to fetch notifications'}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error fetching notifications:', error);
+        showMessage('notificationMessage', 'An error occurred while fetching notifications.', 'error');
+    }
 }
+
+function displayNotifications(notifications) {
+    const container = document.getElementById('notificationsList');
+    
+    if (!notifications || notifications.length === 0) {
+        container.innerHTML = '<p>No notifications found.</p>';
+        return;
+    }
+
+    let html = '<div class="notifications-list">';
+    notifications.forEach(notification => {
+        const date = new Date(notification.created_at).toLocaleDateString();
+        const acknowledgedClass = notification.acknowledged ? 'acknowledged' : 'unacknowledged';
+        
+        html += `
+            <div class="notification-item ${acknowledgedClass}">
+                <p><strong>${notification.message}</strong></p>
+                <p class="notification-date">Date: ${date}</p>
+                <p class="notification-status">Status: ${notification.acknowledged ? 'Read' : 'Unread'}</p>
+                ${!notification.acknowledged ? 
+                    `<button onclick="acknowledgeNotification('${notification.id}')" class="ack-btn">Mark as Read</button>` : 
+                    ''
+                }
+            </div>
+        `;
+    });
+    html += '</div>';
+    
+    container.innerHTML = html;
+    showMessage('notificationMessage', `Found ${notifications.length} notifications`, 'success');
+}
+
+async function acknowledgeNotification(notificationId) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/notifications/${notificationId}/acknowledge`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (response.ok) {
+            showMessage('notificationMessage', 'Notification marked as read', 'success');
+            checkNotifications(); // Refresh the list
+        } else {
+            const data = await response.json();
+            showMessage('notificationMessage', `Error: ${data.message || 'Failed to acknowledge notification'}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error acknowledging notification:', error);
+        showMessage('notificationMessage', 'An error occurred while updating notification.', 'error');
+    }
+}
+
+// Add subscription renewal function
+async function renewSubscription() {
+    if (!currentSubscriptionId) {
+        showMessage('renewalMessage', 'No active subscription found.', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/subscriptions/${currentSubscriptionId}/renew`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+            showMessage('renewalMessage', 'Subscription renewed successfully!', 'success');
+            // Update local storage
+            currentSubscriptionStatus = data.status;
+            localStorage.setItem('currentSubscriptionStatus', currentSubscriptionStatus);
+            updateSubscriptionInfoUI();
+        } else {
+            showMessage('renewalMessage', `Error: ${data.message || 'Failed to renew subscription'}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error renewing subscription:', error);
+        showMessage('renewalMessage', 'An error occurred during renewal.', 'error');
+    }
+}
+
+// Add function to check subscription status
+async function checkSubscriptionStatus() {
+    if (!currentSubscriptionId) {
+        showMessage('subscriptionStatusMessage', 'No subscription selected.', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/subscriptions/${currentSubscriptionId}`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+            // Update current subscription data
+            currentSubscriptionStatus = data.status;
+            currentSubscriptionPlan = data.plan_name;
+            currentSubscriptionPrice = data.price;
+            
+            // Update localStorage
+            localStorage.setItem('currentSubscriptionStatus', currentSubscriptionStatus);
+            localStorage.setItem('currentSubscriptionPlan', currentSubscriptionPlan);
+            localStorage.setItem('currentSubscriptionPrice', currentSubscriptionPrice);
+            
+            updateSubscriptionInfoUI();
+            showMessage('subscriptionStatusMessage', `Subscription status updated: ${data.status}`, 'success');
+        } else {
+            showMessage('subscriptionStatusMessage', `Error: ${data.message || 'Failed to fetch subscription'}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error checking subscription status:', error);
+        showMessage('subscriptionStatusMessage', 'An error occurred while checking subscription status.', 'error');
+    }
+}
+
+
+
 
 // --- Initialize UI on Load ---
 document.addEventListener('DOMContentLoaded', () => {
