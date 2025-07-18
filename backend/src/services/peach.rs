@@ -197,8 +197,8 @@ let payload = json!({
     }
 
     pub async fn check_payment_status(&self, checkout_id: &str) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-        // TODO: Implement querying Peach Payments status endpoint
-        unimplemented!()
+        // Use the existing get_checkout_status method
+        self.get_checkout_status(checkout_id).await
     }
 
     pub async fn get_checkout_status(&self, checkout_id: &str) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {

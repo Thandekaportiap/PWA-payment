@@ -650,7 +650,7 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
     ) -> Result<Vec<crate::models::notification::Notification>, String> {
         let query = "SELECT * FROM notification WHERE user_id = $user_id ORDER BY created_at DESC";
         
-        match self.db.query(query).bind(("user_id", user_id)).await {
+        match self.db.query(query).bind(("user_id", user_id.to_string())).await {
             Ok(mut result) => {
                 let notifications: Vec<crate::models::notification::Notification> = result
                     .take(0)
@@ -664,7 +664,7 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
     pub async fn acknowledge_notification(&self, notification_id: &str) -> Result<(), String> {
         let query = "UPDATE notification SET acknowledged = true WHERE id = $notification_id";
         
-        match self.db.query(query).bind(("notification_id", notification_id)).await {
+        match self.db.query(query).bind(("notification_id", notification_id.to_string())).await {
             Ok(_) => {
                 println!("✅ Notification {} marked as acknowledged", notification_id);
                 Ok(())

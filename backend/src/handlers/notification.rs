@@ -1,6 +1,6 @@
 use actix_web::{HttpResponse, Result, get, post};
-use actix_web::web::{Data, Path};
-use serde::Serialize;
+use actix_web::web::{Data, Path, Json};
+use serde::{Serialize, Deserialize};
 use crate::services::database::DatabaseService;
 
 #[derive(Serialize)]
@@ -11,6 +11,12 @@ pub struct NotificationResponse {
     pub message: String,
     pub acknowledged: bool,
     pub created_at: String,
+}
+
+#[derive(Deserialize)]
+pub struct CreateTestNotificationRequest {
+    pub user_id: String,
+    pub message: String,
 }
 
 #[get("/user/{user_id}")]
@@ -60,6 +66,24 @@ pub async fn mark_notification_read(
             eprintln!("Error acknowledging notification: {}", e);
             Ok(HttpResponse::InternalServerError().json(serde_json::json!({
                 "error": "Failed to acknowledge notification"
+            })))
+        }
+    }
+}
+
+#[post("/test")]
+pub async fn create_test_notification(
+    db: Data<DatabaseService>,
+    payload: Json<CreateTestNotificationRequest>,
+) -> Result<HttpResponse> {
+    match db.create_test_notification(payload.user_id.clone(), payload.message.clone()).await {
+        Ok(_) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "message": "Test notification created successfully"
+        }))),
+        Err(e) => {
+            eprintln!("Error creating test notification: {}", e);
+            Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "Failed to create test notification"
             })))
         }
     }
