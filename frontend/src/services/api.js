@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:3001/api';// Ensure this matches your Rust backend port
+const API_BASE_URL = 'http://localhost:8080/api/v1'; // Fixed: Changed from 3001 to 8080
 
 class ApiError extends Error {
   constructor(message, status) {
