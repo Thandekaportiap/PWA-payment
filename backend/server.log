@@ -233,3 +233,6 @@ warning: `payment-api` (bin "payment-api") generated 19 warnings (run `cargo fix
 ✅ User created successfully: user3@example.com
 📝 Register request received: Json(RegisterUserRequest { email: "user2@example.com", name: "Duplicate User" })
 ❌ Failed to create user: Query error: Serialization error: failed to deserialize; expected a string, found $surrealdb::private::sql::Thing { tb: "users", id: Id::String("1644c390f32d4621addedfdbb08d7665") }
+⏰ Running renewal task at 2025-07-19 12:50:10.892461106 UTC
+⏰ Running renewal task at 2025-07-19 12:55:10.937088082 UTC
+⏰ Running renewal task at 2025-07-19 13:00:10.986523044 UTC
