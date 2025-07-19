@@ -1,0 +1,235 @@
+warning: unused import: `web`
+ --> src/handlers/user.rs:1:50
+  |
+1 | use actix_web::{HttpResponse, Result, get, post, web};
+  |                                                  ^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `std::error::Error`
+ --> src/services/peach.rs:3:5
+  |
+3 | use std::error::Error;
+  |     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::models::subscription::SubscriptionStatus`
+ --> src/tasks/renewal_task.rs:6:5
+  |
+6 | use crate::models::subscription::SubscriptionStatus;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `CreatePaymentDto`
+ --> src/tasks/renewal_task.rs:7:45
+  |
+7 | use crate::models::payment::{PaymentMethod, CreatePaymentDto};
+  |                                             ^^^^^^^^^^^^^^^^
+
+warning: unused variable: `status_param`
+   --> src/handlers/payment.rs:310:25
+    |
+310 |                     let status_param = if status_response
+    |                         ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_status_param`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `payment_id`
+   --> src/services/database.rs:218:9
+    |
+218 |     let payment_id = Uuid::new_v4().simple().to_string();
+    |         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_payment_id`
+
+warning: unused variable: `subscription_id`
+   --> src/services/database.rs:357:9
+    |
+357 |     let subscription_id = Uuid::new_v4().simple().to_string();
+    |         ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_subscription_id`
+
+warning: unused variable: `notification_id`
+   --> src/services/database.rs:697:13
+    |
+697 |         let notification_id = Uuid::new_v4().simple().to_string();
+    |             ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_notification_id`
+
+warning: unused variable: `checkout_id`
+   --> src/services/peach.rs:199:46
+    |
+199 | ..._payment_status(&self, checkout_id: &str) -> Result<Value, Box<dyn s...
+    |                           ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_checkout_id`
+
+warning: struct `PaymentCallbackDto` is never constructed
+  --> src/models/payment.rs:59:12
+   |
+59 | pub struct PaymentCallbackDto {
+   |            ^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+warning: struct `PaymentResult` is never constructed
+  --> src/models/payment.rs:67:12
+   |
+67 | pub struct PaymentResult {
+   |            ^^^^^^^^^^^^^
+
+warning: struct `UpdateUserDto` is never constructed
+  --> src/models/user.rs:20:12
+   |
+20 | pub struct UpdateUserDto {
+   |            ^^^^^^^^^^^^^
+
+warning: struct `CreateNotificationDto` is never constructed
+  --> src/models/notification.rs:15:12
+   |
+15 | pub struct CreateNotificationDto {
+   |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `handle_payment_callback` is never used
+   --> src/handlers/payment.rs:288:14
+    |
+288 | pub async fn handle_payment_callback(query: Query<PaymentCallbackQuery>...
+    |              ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: multiple methods are never used
+   --> src/services/database.rs:272:18
+    |
+17  | impl DatabaseService {
+    | -------------------- methods in this implementation
+...
+272 |     pub async fn get_payment(&self, payment_id: &str) -> Option<Payment> {
+    |                  ^^^^^^^^^^^
+...
+342 |     pub async fn get_payments_by_user(&self, user_id: &str) -> Vec<Paym...
+    |                  ^^^^^^^^^^^^^^^^^^^^
+...
+427 |     pub async fn get_subscriptions_by_user(&self, user_id: &str) -> Vec...
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+468 |     pub async fn update_subscription_status(&self, subscription_id: &st...
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+532 |     pub async fn create_recurring_payment(
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+582 |     pub async fn get_active_recurring_payments(&self) -> Vec<RecurringP...
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+782 |     pub async fn debug_list_payments(&self) -> Vec<Payment> {
+    |                  ^^^^^^^^^^^^^^^^^^^
+...
+791 |     pub async fn debug_list_subscriptions(&self) -> Vec<Subscription> {
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+800 |     pub async fn debug_print_all_payments(&self) {
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+816 |     pub async fn get_payment_count(&self) -> usize {
+    |                  ^^^^^^^^^^^^^^^^^
+...
+825 |     pub async fn get_subscription_count(&self) -> usize {
+    |                  ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `validate_config` and `get_checkout_status` are never used
+   --> src/services/peach.rs:182:12
+    |
+22  | impl PeachPaymentService {
+    | ------------------------ methods in this implementation
+...
+182 |     pub fn validate_config(&self) -> Result<(), Box<dyn std::error::Err...
+    |            ^^^^^^^^^^^^^^^
+...
+204 |     pub async fn get_checkout_status(&self, checkout_id: &str) -> Resul...
+    |                  ^^^^^^^^^^^^^^^^^^^
+
+warning: struct `Subscription` is never constructed
+ --> src/services/subscription.rs:6:12
+  |
+6 | pub struct Subscription {
+  |            ^^^^^^^^^^^^
+
+warning: enum `SubscriptionStatus` is never used
+  --> src/services/subscription.rs:20:10
+   |
+20 | pub enum SubscriptionStatus {
+   |          ^^^^^^^^^^^^^^^^^^
+
+warning: associated items `new`, `activate`, `cancel`, and `expire` are never used
+  --> src/services/subscription.rs:28:12
+   |
+27 | impl Subscription {
+   | ----------------- associated items in this implementation
+28 |     pub fn new(user_id: Uuid, plan_type: String, amount: f64, currency: ...
+   |            ^^^
+...
+44 |     pub fn activate(&mut self) {
+   |            ^^^^^^^^
+...
+52 |     pub fn cancel(&mut self) {
+   |            ^^^^^^
+...
+57 |     pub fn expire(&mut self) {
+   |            ^^^^^^
+
+warning: `payment-api` (bin "payment-api") generated 19 warnings (run `cargo fix --bin "payment-api"` to apply 4 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.21s
+     Running `target/debug/payment-api`
+✅ Executed: DEFINE TABLE users SCHEMAFULL;
+✅ Executed: DEFINE FIELD id ON users TYPE string;
+✅ Executed: DEFINE FIELD email ON users TYPE string;
+✅ Executed: DEFINE FIELD name ON users TYPE string;
+✅ Executed: DEFINE FIELD created_at ON users TYPE datetime;
+✅ Executed: DEFINE FIELD updated_at ON users TYPE datetime;
+✅ Executed: DEFINE INDEX unique_email ON users COLUMNS email UNIQUE;
+✅ Executed: DEFINE TABLE payments SCHEMAFULL;
+✅ Executed: DEFINE FIELD id ON payments TYPE string;
+✅ Executed: DEFINE FIELD user_id ON payments TYPE string;
+✅ Executed: DEFINE FIELD subscription_id ON payments TYPE option<string>;
+✅ Executed: DEFINE FIELD amount ON payments TYPE number;
+✅ Executed: DEFINE FIELD recurring_token ON payments TYPE option<string>;
+✅ Executed: DEFINE FIELD status ON payments TYPE string;
+✅ Executed: DEFINE FIELD payment_method ON payments TYPE string;
+✅ Executed: DEFINE FIELD merchant_transaction_id ON payments TYPE string;
+✅ Executed: DEFINE FIELD checkout_id ON payments TYPE option<string>;
+✅ Executed: DEFINE FIELD created_at ON payments TYPE datetime;
+✅ Executed: DEFINE FIELD updated_at ON payments TYPE datetime;
+✅ Executed: DEFINE INDEX unique_merchant_txn ON payments COLUMNS merchant_transaction_id UNIQUE;
+✅ Executed: DEFINE TABLE subscriptions SCHEMAFULL;
+✅ Executed: DEFINE FIELD id ON subscriptions TYPE string;
+✅ Executed: DEFINE FIELD user_id ON subscriptions TYPE string;
+✅ Executed: DEFINE FIELD plan_name ON subscriptions TYPE string;
+✅ Executed: DEFINE FIELD price ON subscriptions TYPE number;
+✅ Executed: DEFINE FIELD status ON subscriptions TYPE string;
+✅ Executed: DEFINE FIELD payment_method ON subscriptions TYPE option<string>;
+✅ Executed: DEFINE FIELD payment_brand ON subscriptions TYPE option<string>;
+✅ Executed: DEFINE FIELD start_date ON subscriptions TYPE option<datetime>;
+✅ Executed: DEFINE FIELD end_date ON subscriptions TYPE option<datetime>;
+✅ Executed: DEFINE FIELD created_at ON subscriptions TYPE datetime;
+✅ Executed: DEFINE FIELD updated_at ON subscriptions TYPE datetime;
+✅ Executed: DEFINE TABLE recurring_payments SCHEMAFULL;
+✅ Executed: DEFINE FIELD id ON recurring_payments TYPE string;
+✅ Executed: DEFINE FIELD user_id ON recurring_payments TYPE string;
+✅ Executed: DEFINE FIELD subscription_id ON recurring_payments TYPE string;
+✅ Executed: DEFINE FIELD recurring_token ON recurring_payments TYPE string;
+✅ Executed: DEFINE FIELD card_last_four ON recurring_payments TYPE option<string>;
+✅ Executed: DEFINE FIELD card_brand ON recurring_payments TYPE option<string>;
+✅ Executed: DEFINE FIELD status ON recurring_payments TYPE string;
+✅ Executed: DEFINE FIELD created_at ON recurring_payments TYPE datetime;
+✅ Executed: DEFINE FIELD updated_at ON recurring_payments TYPE datetime;
+✅ Executed: DEFINE TABLE notification SCHEMAFULL;
+✅ Executed: DEFINE FIELD id ON notification TYPE string;
+✅ Executed: DEFINE FIELD user_id ON notification TYPE string;
+✅ Executed: DEFINE FIELD subscription_id ON notification TYPE string;
+✅ Executed: DEFINE FIELD message ON notification TYPE string;
+✅ Executed: DEFINE FIELD acknowledged ON notification TYPE bool;
+✅ Executed: DEFINE FIELD created_at ON notification TYPE datetime;
+✅ Database schema initialization completed
+🚀 Starting server on 0.0.0.0:8080
+⏰ Running renewal task at 2025-07-19 12:45:10.861090914 UTC
+📝 Register request received: Json(RegisterUserRequest { email: "user2@example.com", name: "Test User 2" })
+✅ Created user: Test User 2 (1644c390f32d4621addedfdbb08d7665)
+✅ User created successfully: user2@example.com
+📝 Test notification created for user test-123: Hello World!
+📝 Test notification created for user user-456: Another test notification
+📝 Register request received: Json(RegisterUserRequest { email: "user3@example.com", name: "Test User 3" })
+✅ Created user: Test User 3 (635a55caec81472891ffda902b692597)
+✅ User created successfully: user3@example.com
+📝 Register request received: Json(RegisterUserRequest { email: "user2@example.com", name: "Duplicate User" })
+❌ Failed to create user: Query error: Serialization error: failed to deserialize; expected a string, found $surrealdb::private::sql::Thing { tb: "users", id: Id::String("1644c390f32d4621addedfdbb08d7665") }

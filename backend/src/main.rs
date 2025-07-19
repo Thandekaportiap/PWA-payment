@@ -92,6 +92,7 @@ async fn main() -> std::io::Result<()> {
                         web::scope("/notifications")
                             .service(handlers::notification::get_notifications)
                             .service(handlers::notification::mark_notification_read)
+                            .service(handlers::notification::create_test_notification)
                     )
             )
     })

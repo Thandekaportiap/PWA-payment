@@ -1,6 +1,6 @@
 use actix_web::{HttpResponse, Result, get, post};
-use actix_web::web::{Data, Path};
-use serde::Serialize;
+use actix_web::web::{Data, Path, Json};
+use serde::{Serialize, Deserialize};
 use crate::services::database::DatabaseService;
 
 #[derive(Serialize)]
@@ -20,7 +20,7 @@ pub async fn get_notifications(
 ) -> Result<HttpResponse> {
     let user_id = path.into_inner();
     
-    match db.get_user_notifications(&user_id).await {
+    match db.get_user_notifications(user_id).await {
         Ok(notifications) => {
             let response: Vec<NotificationResponse> = notifications
                 .into_iter()
@@ -52,7 +52,7 @@ pub async fn mark_notification_read(
 ) -> Result<HttpResponse> {
     let notification_id = path.into_inner();
     
-    match db.acknowledge_notification(&notification_id).await {
+    match db.acknowledge_notification(notification_id).await {
         Ok(_) => Ok(HttpResponse::Ok().json(serde_json::json!({
             "message": "Notification marked as read"
         }))),
@@ -60,6 +60,30 @@ pub async fn mark_notification_read(
             eprintln!("Error acknowledging notification: {}", e);
             Ok(HttpResponse::InternalServerError().json(serde_json::json!({
                 "error": "Failed to acknowledge notification"
+            })))
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct TestNotificationRequest {
+    pub user_id: String,
+    pub message: String,
+}
+
+#[post("/test")]
+pub async fn create_test_notification(
+    db: Data<DatabaseService>,
+    payload: Json<TestNotificationRequest>,
+) -> Result<HttpResponse> {
+    match db.create_test_notification(payload.user_id.clone(), payload.message.clone()).await {
+        Ok(_) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "message": "Test notification created successfully"
+        }))),
+        Err(e) => {
+            eprintln!("Error creating test notification: {}", e);
+            Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "Failed to create test notification"
             })))
         }
     }

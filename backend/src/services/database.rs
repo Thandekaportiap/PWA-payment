@@ -129,27 +129,36 @@ impl DatabaseService {
         return Err("User with this email already exists".to_string());
     }
 
-
     let user_id = Uuid::new_v4().simple().to_string();
+    let now = Utc::now();
     
-    // ✅ Don't set the id field in content - let SurrealDB handle it
-    let user = User {
-        id: user_id.clone(), 
-        email: user_dto.email,
-        name: user_dto.name,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-    };
+    // Simple CREATE query that just creates the record
+    let query = format!(r#"
+        CREATE users:{} SET
+            email = $email,
+            name = $name,
+            created_at = time::now(),
+            updated_at = time::now()
+    "#, user_id);
 
-    let created_user: User = self.db
-        .create(("users", user_id.clone()))
-        .content(user)
+    self.db
+        .query(query)
+        .bind(("email", user_dto.email.clone()))
+        .bind(("name", user_dto.name.clone()))
         .await
-        .map_err(|e| format!("Failed to create user: {}", e))?
-        .ok_or_else(|| "Failed to create user: no result returned".to_string())?;
+        .map_err(|e| format!("Failed to create user: {}", e))?;
     
-    println!("✅ Created user: {} ({})", created_user.name, created_user.id);
-    Ok(created_user)
+    // Create our User struct manually with the data we know
+    let user = User {
+        id: user_id.clone(),
+        email: user_dto.email.clone(),
+        name: user_dto.name.clone(),
+        created_at: now,
+        updated_at: now,
+    };
+    
+    println!("✅ Created user: {} ({})", user.name, user.id);
+    Ok(user)
 }
 
     pub async fn get_user(&self, user_id: &str) -> Option<User> {
@@ -223,11 +232,34 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         updated_at: Utc::now(),
     };
 
-    let created_payment: Payment = self.db
-        .create(("payments", payment_id.clone()))
-        .content(payment)
+    // Use query method to properly handle record creation
+    let query = r#"
+        CREATE payments SET
+            merchant_transaction_id = $merchant_transaction_id,
+            amount = $amount,
+            payment_method = $payment_method,
+            user_id = $user_id,
+            status = $status,
+            created_at = $created_at,
+            updated_at = $updated_at
+    "#;
+
+    let mut result = self.db
+        .query(query)
+        .bind(("merchant_transaction_id", payment.merchant_transaction_id.clone()))
+        .bind(("amount", payment.amount))
+        .bind(("payment_method", payment.payment_method.to_string()))
+        .bind(("user_id", payment.user_id.clone()))
+        .bind(("status", payment.status.clone()))
+        .bind(("created_at", payment.created_at))
+        .bind(("updated_at", payment.updated_at))
         .await
-        .map_err(|e| format!("Failed to create payment: {}", e))?
+        .map_err(|e| format!("Failed to create payment: {}", e))?;
+    
+    let created_payment: Option<Payment> = result.take(0)
+        .map_err(|e| format!("Failed to create payment: {}", e))?;
+    
+    let created_payment = created_payment
         .ok_or_else(|| "Failed to create payment: no result returned".to_string())?;
     
     println!(
@@ -339,11 +371,38 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         updated_at: Utc::now(),
     };
 
-    let created_subscription: Subscription = self.db
-        .create(("subscriptions", subscription_id.clone()))
-        .content(subscription)
+    // Use query method to properly handle record creation
+    let query = r#"
+        CREATE subscriptions SET
+            user_id = $user_id,
+            plan_name = $plan_name,
+            price = $price,
+            payment_method = $payment_method,
+            status = $status,
+            start_date = $start_date,
+            end_date = $end_date,
+            created_at = $created_at,
+            updated_at = $updated_at
+    "#;
+
+    let mut result = self.db
+        .query(query)
+        .bind(("user_id", subscription.user_id.clone()))
+        .bind(("plan_name", subscription.plan_name.clone()))
+        .bind(("price", subscription.price))
+        .bind(("payment_method", subscription.payment_method.as_ref().map(|pm| pm.to_string())))
+        .bind(("status", subscription.status.clone()))
+        .bind(("start_date", subscription.start_date))
+        .bind(("end_date", subscription.end_date))
+        .bind(("created_at", subscription.created_at))
+        .bind(("updated_at", subscription.updated_at))
         .await
-        .map_err(|e| format!("Failed to create subscription: {}", e))?
+        .map_err(|e| format!("Failed to create subscription: {}", e))?;
+    
+    let created_subscription: Option<Subscription> = result.take(0)
+        .map_err(|e| format!("Failed to create subscription: {}", e))?;
+    
+    let created_subscription = created_subscription
         .ok_or_else(|| "Failed to create subscription: no result returned".to_string())?;
     
     println!("✅ Created subscription: {} ({})", created_subscription.plan_name, created_subscription.id);
@@ -491,10 +550,28 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
             updated_at: Utc::now(),
         };
 
+        let query = r#"
+            CREATE recurring_payments SET
+                user_id = $user_id,
+                subscription_id = $subscription_id,
+                recurring_token = $recurring_token,
+                card_last_four = $card_last_four,
+                card_brand = $card_brand,
+                status = $status,
+                created_at = $created_at,
+                updated_at = $updated_at
+        "#;
+
         let _: Result<Vec<RecurringPayment>, _> = self.db
-            .query("CREATE recurring_payments:$record_id CONTENT $rec_payment")
-            .bind(("record_id", rec_payment_id.clone()))
-            .bind(("rec_payment", rec_payment.clone()))
+            .query(query)
+            .bind(("user_id", rec_payment.user_id.clone()))
+            .bind(("subscription_id", rec_payment.subscription_id.clone()))
+            .bind(("recurring_token", rec_payment.recurring_token.clone()))
+            .bind(("card_last_four", rec_payment.card_last_four.clone()))
+            .bind(("card_brand", rec_payment.card_brand.clone()))
+            .bind(("status", rec_payment.status.clone()))
+            .bind(("created_at", rec_payment.created_at))
+            .bind(("updated_at", rec_payment.updated_at))
             .await
             .and_then(|mut response| response.take(0));
         
@@ -622,7 +699,7 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         let now = Utc::now();
 
         let query = r#"
-            CREATE notification:$record_id SET
+            CREATE notification SET
                 user_id = $user_id,
                 subscription_id = $subscription_id,
                 message = $message,
@@ -630,15 +707,17 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
                 created_at = $created_at
         "#;
 
-        self.db
+        let mut result = self.db
             .query(query)
-            .bind(("record_id", notification_id))
             .bind(("user_id", user_id.clone()))
             .bind(("subscription_id", subscription_id.clone()))
             .bind(("message", message.clone()))
             .bind(("created_at", now))
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("Failed to create notification: {}", e))?;
+        
+        let _: Option<serde_json::Value> = result.take(0)
+            .map_err(|e| format!("Failed to create notification: {}", e))?;
         
         println!("🔔 Notification created for user {} to manually renew subscription {}", user_id, subscription_id);
         Ok(())
@@ -646,7 +725,7 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
 
     pub async fn get_user_notifications(
         &self,
-        user_id: &str,
+        user_id: String,
     ) -> Result<Vec<crate::models::notification::Notification>, String> {
         let query = "SELECT * FROM notification WHERE user_id = $user_id ORDER BY created_at DESC";
         
@@ -661,12 +740,13 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         }
     }
 
-    pub async fn acknowledge_notification(&self, notification_id: &str) -> Result<(), String> {
+    pub async fn acknowledge_notification(&self, notification_id: String) -> Result<(), String> {
         let query = "UPDATE notification SET acknowledged = true WHERE id = $notification_id";
         
+        let notification_id_clone = notification_id.clone();
         match self.db.query(query).bind(("notification_id", notification_id)).await {
             Ok(_) => {
-                println!("✅ Notification {} marked as acknowledged", notification_id);
+                println!("✅ Notification {} marked as acknowledged", notification_id_clone);
                 Ok(())
             }
             Err(e) => Err(format!("Database error: {}", e)),
@@ -675,25 +755,21 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
 
     pub async fn create_test_notification(&self, user_id: String, message: String) -> Result<(), String> {
         let notification_id = Uuid::new_v4().simple().to_string();
-        let now = Utc::now();
-
-        let query = r#"
-            CREATE notification:$record_id SET
+        let query = format!(r#"
+            CREATE notification:{} SET
                 user_id = $user_id,
                 subscription_id = "test-subscription",
                 message = $message,
                 acknowledged = false,
-                created_at = $created_at
-        "#;
+                created_at = time::now()
+        "#, notification_id);
 
         self.db
             .query(query)
-            .bind(("record_id", notification_id))
             .bind(("user_id", user_id.clone()))
             .bind(("message", message.clone()))
-            .bind(("created_at", now))
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("Failed to create test notification: {}", e))?;
         
         println!("📝 Test notification created for user {}: {}", user_id, message);
         Ok(())
