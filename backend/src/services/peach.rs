@@ -1,6 +1,5 @@
 use reqwest::Client;
 use serde_json::{json, Value};
-use std::error::Error;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use uuid::Uuid;
@@ -45,7 +44,7 @@ impl PeachPaymentService {
         }
     }
 
-    pub async fn initiate_checkout_api_v2_with_tokenization(
+   pub async fn initiate_checkout_api_v2_with_tokenization(
         &self,
         user_id: &str,
         subscription_id: &str,
@@ -55,50 +54,47 @@ impl PeachPaymentService {
         let token = self.get_oauth_token().await?;
 
         let nonce = Uuid::new_v4().to_string();
-let payload = json!({
-    "authentication": {
-        "entityId": self.v2_entity_id,
-    },
-    "amount": amount,
-    "currency": "ZAR",
-    "merchantTransactionId": merchant_transaction_id,
-    "paymentType": "DB",
-    "nonce": nonce,
-    "customer": {
-        "merchantCustomerId": user_id
-    },
-    "createRegistration": true,
-    "customParameters": {
-        "subscription_id": subscription_id,
-        "user_id": user_id
-    },
-    "notificationUrl": self.notification_url,
-    "shopperResultUrl": self.shopper_result_url
-});
+        let payload = json!({
+            "authentication": {
+                "entityId": self.v2_entity_id,
+            },
+            "amount": amount,
+            "currency": "ZAR",
+            "merchantTransactionId": merchant_transaction_id,
+            "paymentType": "DB",
+            "nonce": nonce,
+            "customer": {
+                "merchantCustomerId": user_id
+            },
+            "customParameters": {
+                "subscription_id": subscription_id
+            },
+            "notificationUrl": self.notification_url,
+            "shopperResultUrl": self.shopper_result_url,
+        });
+
         println!("Initiate Checkout V2 Payload: {}", payload);
 
         let response = self.client
             .post(&self.v2_checkout_url)
-            .header("Content-Type", "application/json")
-            .header("Origin", "http://127.0.0.1:8001")
-
+            .header("content-type", "application/json")
+            .header("Origin", "https://7a12-105-0-3-186.ngrok-free.app")
             .bearer_auth(token)
             .json(&payload)
             .send()
             .await?;
 
-        let status = response.status();
-        let body_text = response.text().await?;
+          let status = response.status();
+    let body_text = response.text().await?;
 
-        println!("Checkout API response status: {}", status);
-        println!("Checkout API response body: {}", body_text);
+    if !status.is_success() {
+        return Err(format!("Checkout API error: Status {}, Body: {}", status, body_text).into());
+    }
 
-        if !status.is_success() {
-            return Err(format!("Checkout API error: Status {}, Body: {}", status, body_text).into());
-        }
-
-        let body: Value = serde_json::from_str(&body_text)?;
-        Ok(body)
+    let body: Value = serde_json::from_str(&body_text)?;
+    
+    // We now return the full body, which includes the redirect URL.
+    Ok(body)
     }
 
     pub async fn execute_recurring_payment(
@@ -178,26 +174,8 @@ let payload = json!({
         calculated == signature
     }
 
-    /// Optional: Validate required config fields
-    pub fn validate_config(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        if self.client_id.is_empty()
-            || self.client_secret.is_empty()
-            || self.merchant_id.is_empty()
-            || self.v2_auth_url.is_empty()
-            || self.v2_checkout_url.is_empty()
-            || self.v2_entity_id.is_empty()
-            || self.notification_url.is_empty()
-            || self.shopper_result_url.is_empty()
-        {
-            return Err("Missing Peach config values".into());
-        }
-
-        println!("✓ PeachPaymentService config validated");
-        Ok(())
-    }
 
     pub async fn check_payment_status(&self, checkout_id: &str) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-        // Use the existing get_checkout_status method
         self.get_checkout_status(checkout_id).await
     }
 

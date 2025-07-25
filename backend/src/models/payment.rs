@@ -1,6 +1,22 @@
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use surrealdb::sql::Thing;
 use std::fmt;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Payment {
+    pub id: Thing,
+    pub user_id: String,
+    pub subscription_id: Option<String>,
+    pub amount: f64,
+    pub status: PaymentStatus,
+    pub payment_method: PaymentMethod,
+    pub recurring_token: Option<String>,
+    pub merchant_transaction_id: String,
+    pub checkout_id: Option<String>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PaymentStatus {
@@ -10,7 +26,6 @@ pub enum PaymentStatus {
     Cancelled,
     Refunded,
 }
-
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 pub enum PaymentMethod {
@@ -32,21 +47,6 @@ impl fmt::Display for PaymentMethod {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Payment {
-    pub id: String,
-    pub user_id: String,
-    pub subscription_id: Option<String>,
-    pub amount: f64,
-    pub status: PaymentStatus,
-    pub payment_method: PaymentMethod,
-     pub recurring_token: Option<String>,
-    pub merchant_transaction_id: String,
-    pub checkout_id: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
 #[derive(Debug, Deserialize)]
 pub struct CreatePaymentDto {
     pub user_id: String,
@@ -56,11 +56,31 @@ pub struct CreatePaymentDto {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct UpdatePaymentDto {
+    pub status: Option<PaymentStatus>,
+    pub checkout_id: Option<String>,
+    pub recurring_token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct PaymentCallbackDto {
     pub id: String,
     pub result: PaymentResult,
     #[serde(rename = "merchantTransactionId")]
     pub merchant_transaction_id: Option<String>,
+}
+
+
+// ... (existing structs)
+
+#[derive(Debug, Serialize)]
+pub struct InitiatePaymentResponse {
+    #[serde(rename = "checkoutId")]
+    pub checkout_id: String,
+    #[serde(rename = "merchantTransactionId")]
+    pub merchant_transaction_id: String,
+    #[serde(rename = "redirectUrl", skip_serializing_if = "Option::is_none")]
+    pub redirect_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

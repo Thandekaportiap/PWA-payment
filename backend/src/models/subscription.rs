@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
 use crate::models::payment::PaymentMethod; 
+use surrealdb::sql::Thing;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateSubscriptionDto {
@@ -12,7 +13,7 @@ pub struct CreateSubscriptionDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Subscription {
-     pub id: String,  // Changed from Uuid to String
+     pub id: Thing,  // Changed from Uuid to String
     pub user_id: String,
     pub plan_name: String,
     pub price: f64,
@@ -21,8 +22,7 @@ pub struct Subscription {
       pub payment_brand: Option<String>,
     pub start_date: Option<DateTime<Utc>>,
     pub end_date: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -32,4 +32,9 @@ pub enum SubscriptionStatus {
     Expired,
     Cancelled,
     Suspended,
+}
+
+#[derive(Deserialize)]
+pub struct ActivateSubscriptionRequest {
+    pub subscription_id: String,
 }

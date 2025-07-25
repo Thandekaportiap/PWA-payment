@@ -31,7 +31,7 @@ pub async fn get_notifications(
             let response: Vec<NotificationResponse> = notifications
                 .into_iter()
                 .map(|n| NotificationResponse {
-                    id: n.id,
+                    id: n.id.id.to_string(),
                     user_id: n.user_id,
                     subscription_id: n.subscription_id,
                     message: n.message,
@@ -88,3 +88,7 @@ pub async fn create_test_notification(
         }
     }
 }
+
+
+
+

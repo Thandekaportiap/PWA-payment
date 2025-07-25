@@ -89,12 +89,15 @@ async fn main() -> std::io::Result<()> {
                         .service(handlers::subscription::create_subscription)
                             .service(handlers::subscription::get_subscription)
                             .service(handlers::subscription::renew_subscription)
+                             .service(handlers::subscription::activate_subscription)
                     )
                        .service(
                         web::scope("/notifications")
                             .service(handlers::notification::get_notifications)
                             .service(handlers::notification::mark_notification_read)
                             .service(handlers::notification::create_test_notification)
+                            
+                            
                     )
             )
     })

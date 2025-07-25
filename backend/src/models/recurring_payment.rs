@@ -10,8 +10,7 @@ pub struct RecurringPayment {
     pub card_last_four: Option<String>,
     pub card_brand: Option<String>,
     pub status: RecurringPaymentStatus,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+   
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)] // Added Serialize and Deserialize derives

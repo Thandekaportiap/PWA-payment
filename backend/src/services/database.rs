@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use chrono::{Utc, Duration};
 use uuid::Uuid;
+use surrealdb::sql::Thing;
 use surrealdb::{Surreal, engine::remote::http::Client};
 use crate::models::{
     user::{User, CreateUserDto},
@@ -35,87 +36,91 @@ impl DatabaseService {
             db: Arc::new(db),
         })
     }
+
     
-    async fn init_schema(db: &Surreal<Client>) -> Result<(), Box<dyn std::error::Error>> {
-        // Create tables and define schema
-        let queries = vec![
-            // Users table
-            "DEFINE TABLE users SCHEMAFULL;",
-            "DEFINE FIELD id ON users TYPE string;",
-            "DEFINE FIELD email ON users TYPE string;",
-            "DEFINE FIELD name ON users TYPE string;",
-            "DEFINE FIELD created_at ON users TYPE datetime;",
-            "DEFINE FIELD updated_at ON users TYPE datetime;",
-            "DEFINE INDEX unique_email ON users COLUMNS email UNIQUE;",
-            
-            // Payments table
-            "DEFINE TABLE payments SCHEMAFULL;",
-            "DEFINE FIELD id ON payments TYPE string;",
-            "DEFINE FIELD user_id ON payments TYPE string;",
-            "DEFINE FIELD subscription_id ON payments TYPE option<string>;",
-            "DEFINE FIELD amount ON payments TYPE number;",
-            "DEFINE FIELD recurring_token ON payments TYPE option<string>;",
-            "DEFINE FIELD status ON payments TYPE string;",
-            "DEFINE FIELD payment_method ON payments TYPE string;",
-            "DEFINE FIELD merchant_transaction_id ON payments TYPE string;",
-            "DEFINE FIELD checkout_id ON payments TYPE option<string>;",
-            "DEFINE FIELD created_at ON payments TYPE datetime;",
-            "DEFINE FIELD updated_at ON payments TYPE datetime;",
-            "DEFINE INDEX unique_merchant_txn ON payments COLUMNS merchant_transaction_id UNIQUE;",
-            
-            // Subscriptions table
-            "DEFINE TABLE subscriptions SCHEMAFULL;",
-            "DEFINE FIELD id ON subscriptions TYPE string;",
-            "DEFINE FIELD user_id ON subscriptions TYPE string;",
-            "DEFINE FIELD plan_name ON subscriptions TYPE string;",
-            "DEFINE FIELD price ON subscriptions TYPE number;",
-            "DEFINE FIELD status ON subscriptions TYPE string;",
-            "DEFINE FIELD payment_method ON subscriptions TYPE option<string>;",
-            "DEFINE FIELD payment_brand ON subscriptions TYPE option<string>;",
-            "DEFINE FIELD start_date ON subscriptions TYPE option<datetime>;",
-            "DEFINE FIELD end_date ON subscriptions TYPE option<datetime>;",
-            "DEFINE FIELD created_at ON subscriptions TYPE datetime;",
-            "DEFINE FIELD updated_at ON subscriptions TYPE datetime;",
-            
-            // Recurring payments table
-            "DEFINE TABLE recurring_payments SCHEMAFULL;",
-            "DEFINE FIELD id ON recurring_payments TYPE string;",
-            "DEFINE FIELD user_id ON recurring_payments TYPE string;",
-            "DEFINE FIELD subscription_id ON recurring_payments TYPE string;",
-            "DEFINE FIELD recurring_token ON recurring_payments TYPE string;",
-            "DEFINE FIELD card_last_four ON recurring_payments TYPE option<string>;",
-            "DEFINE FIELD card_brand ON recurring_payments TYPE option<string>;",
-            "DEFINE FIELD status ON recurring_payments TYPE string;",
-            "DEFINE FIELD created_at ON recurring_payments TYPE datetime;",
-            "DEFINE FIELD updated_at ON recurring_payments TYPE datetime;",
-            
-            // Notifications table
-            "DEFINE TABLE notification SCHEMAFULL;",
-            "DEFINE FIELD id ON notification TYPE string;",
-            "DEFINE FIELD user_id ON notification TYPE string;",
-            "DEFINE FIELD subscription_id ON notification TYPE string;",
-            "DEFINE FIELD message ON notification TYPE string;",
-            "DEFINE FIELD acknowledged ON notification TYPE bool;",
-            "DEFINE FIELD created_at ON notification TYPE datetime;",
-        ];
+    
+  async fn init_schema(db: &Surreal<Client>) -> Result<(), Box<dyn std::error::Error>> {
+
+    // Add this in your init or setup code
+// db.query("REMOVE TABLE users;").await?;
+// db.query("REMOVE TABLE payments;").await?;
+// db.query("REMOVE TABLE subscriptions;").await?;
+// db.query("REMOVE TABLE recurring_payments;").await?;
+// db.query("REMOVE TABLE notification;").await?;
+
+    // Create tables and define schema WITHOUT timestamp fields
+    let queries = vec![
+
         
-        for query in queries {
-            let result = db.query(query).await;
-            match result {
-                Ok(_) => println!("✅ Executed: {}", query),
-                Err(e) => println!("❌ Failed to execute {}: {}", query, e),
-            }
+        // Users table - no timestamps
+        "DEFINE TABLE users SCHEMAFULL;",
+        "DEFINE FIELD id ON users TYPE string;",
+        "DEFINE FIELD email ON users TYPE string;",
+        "DEFINE FIELD name ON users TYPE string;",
+        "DEFINE INDEX unique_email ON users COLUMNS email UNIQUE;",
+        
+        // Payments table - no timestamps
+        "DEFINE TABLE payments SCHEMAFULL;",
+        "DEFINE FIELD id ON payments TYPE string;",
+        "DEFINE FIELD user_id ON payments TYPE string;",
+        "DEFINE FIELD subscription_id ON payments TYPE option<string>;",
+        "DEFINE FIELD amount ON payments TYPE number;",
+        "DEFINE FIELD recurring_token ON payments TYPE option<string>;",
+        "DEFINE FIELD status ON payments TYPE string;",
+        "DEFINE FIELD payment_method ON payments TYPE string;",
+        "DEFINE FIELD merchant_transaction_id ON payments TYPE string;",
+        "DEFINE FIELD checkout_id ON payments TYPE option<string>;",
+        "DEFINE INDEX unique_merchant_txn ON payments COLUMNS merchant_transaction_id UNIQUE;",
+        
+        // Subscriptions table - no timestamps
+        "DEFINE TABLE subscriptions SCHEMAFULL;",
+        "DEFINE FIELD id ON subscriptions TYPE string;",
+        "DEFINE FIELD user_id ON subscriptions TYPE string;",
+        "DEFINE FIELD plan_name ON subscriptions TYPE string;",
+        "DEFINE FIELD price ON subscriptions TYPE number;",
+        "DEFINE FIELD status ON subscriptions TYPE string;",
+        "DEFINE FIELD payment_method ON subscriptions TYPE option<string>;",
+        "DEFINE FIELD payment_brand ON subscriptions TYPE option<string>;",
+        "DEFINE FIELD start_date ON subscriptions TYPE option<string>;", 
+        "DEFINE FIELD end_date ON subscriptions TYPE option<string>;",   
+        
+        // Recurring payments table - 
+        "DEFINE TABLE recurring_payments SCHEMAFULL;",
+        "DEFINE FIELD id ON recurring_payments TYPE string;",
+        "DEFINE FIELD user_id ON recurring_payments TYPE string;",
+        "DEFINE FIELD subscription_id ON recurring_payments TYPE string;",
+        "DEFINE FIELD recurring_token ON recurring_payments TYPE string;",
+        "DEFINE FIELD card_last_four ON recurring_payments TYPE option<string>;",
+        "DEFINE FIELD card_brand ON recurring_payments TYPE option<string>;",
+        "DEFINE FIELD status ON recurring_payments TYPE string;",
+        
+        // Notifications table 
+       "DEFINE TABLE notification SCHEMAFULL;",
+        "DEFINE FIELD id ON notification TYPE record;", 
+        "DEFINE FIELD user_id ON notification TYPE string;",
+        "DEFINE FIELD subscription_id ON notification TYPE string;",
+        "DEFINE FIELD message ON notification TYPE string;",
+        "DEFINE FIELD acknowledged ON notification TYPE bool;",
+        "DEFINE FIELD created_at ON notification TYPE datetime;", 
+    ];
+    
+    for query in queries {
+        let result = db.query(query).await;
+        match result {
+            Ok(_) => println!("✅ Executed: {}", query),
+            Err(e) => println!("❌ Failed to execute {}: {}", query, e),
         }
-        
-        println!("✅ Database schema initialization completed");
-        Ok(())
     }
+    
+    println!("✅ Database schema initialization completed");
+    Ok(())
+}
 
     // ---------------------
     // User operations
     // ---------------------
-    
-  pub async fn create_user(&self, user_dto: CreateUserDto) -> Result<User, String> {
+
+   pub async fn create_user(&self, user_dto: CreateUserDto) -> Result<User, String> {
     // Check if user already exists
     let existing: Vec<User> = self.db
         .query("SELECT * FROM users WHERE email = $email")
@@ -124,30 +129,27 @@ impl DatabaseService {
         .map_err(|e| format!("Database error: {}", e))?
         .take(0)
         .map_err(|e| format!("Query error: {}", e))?;
-    
+
     if !existing.is_empty() {
         return Err("User with this email already exists".to_string());
     }
 
-
     let user_id = Uuid::new_v4().simple().to_string();
-    
-    // ✅ Don't set the id field in content - let SurrealDB handle it
-    let user = User {
-        id: user_id.clone(), 
-        email: user_dto.email,
-        name: user_dto.name,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-    };
+    let user_key = Thing::from(("users", user_id.clone().as_str()));
 
-    let created_user: User = self.db
-        .create(("users", user_id.clone()))
-        .content(user)
+    let mut result = self.db
+        .query("CREATE $user_key SET email = $email, name = $name")
+        .bind(("user_key", user_key))
+        .bind(("email", user_dto.email))
+        .bind(("name", user_dto.name))
         .await
-        .map_err(|e| format!("Failed to create user: {}", e))?
-        .ok_or_else(|| "Failed to create user: no result returned".to_string())?;
-    
+        .map_err(|e| format!("Failed to create user: {}", e))?;
+
+    let created_user: Option<User> = result.take(0)
+        .map_err(|e| format!("Query error: {}", e))?;
+
+    let created_user = created_user.ok_or_else(|| "Failed to create user: no result returned".to_string())?;
+
     println!("✅ Created user: {} ({})", created_user.name, created_user.id);
     Ok(created_user)
 }
@@ -177,7 +179,6 @@ impl DatabaseService {
         result.ok().and_then(|users| users.into_iter().next())
     }
 
-    // ✅ Fixed: Changed parameter from &Uuid to &str
     pub async fn get_recurring_token_by_user(&self, user_id: &str) -> Option<String> {
         let result: Result<Vec<RecurringPayment>, _> = self.db
             .query("SELECT * FROM recurring_payments WHERE user_id = $user_id AND status = 'Active' LIMIT 1")
@@ -194,8 +195,11 @@ impl DatabaseService {
     // Payment operations
     // ---------------------
     
-   // Fix the create_payment method around line 219
-pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Payment, String> {
+   // Create payment without timestamps
+pub async fn create_payment(&self, dto: CreatePaymentDto) -> Result<Payment, String> {
+    let payment_id = Uuid::new_v4().simple().to_string();
+    let payment_key = Thing::from(("payments", payment_id.clone().as_str()));
+    
     let merchant_transaction_id = format!(
         "TXN_{}",
         Uuid::new_v4()
@@ -206,37 +210,31 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
             .unwrap_or("0000000000000000")
     );
 
-    let payment_id = Uuid::new_v4().simple().to_string();
-    
-    // ✅ Don't set the id field in content
-    let payment = Payment {
-        id: String::new(), // Will be set by SurrealDB
-        user_id: payment_dto.user_id,
-        subscription_id: Some(payment_dto.subscription_id),
-        amount: payment_dto.amount,
-        recurring_token: None,
-        status: PaymentStatus::Pending,
-        payment_method: payment_dto.payment_method.unwrap_or(PaymentMethod::Card),
-        merchant_transaction_id,
-        checkout_id: None,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-    };
-
-    let created_payment: Payment = self.db
-        .create(("payments", payment_id.clone()))
-        .content(payment)
+    let mut result = self.db
+        .query("CREATE $payment_key SET user_id = $user_id, subscription_id = $subscription_id, amount = $amount, status = $status, payment_method = $payment_method, merchant_transaction_id = $merchant_transaction_id, checkout_id = $checkout_id, recurring_token = $recurring_token")
+        .bind(("payment_key", payment_key))
+        .bind(("user_id", dto.user_id))
+        .bind(("subscription_id", dto.subscription_id))
+        .bind(("amount", dto.amount))
+        .bind(("status", PaymentStatus::Pending))
+        .bind(("payment_method", dto.payment_method.unwrap_or(PaymentMethod::Card)))
+        .bind(("merchant_transaction_id", merchant_transaction_id))
+        .bind(("checkout_id", None::<String>))
+        .bind(("recurring_token", None::<String>))
         .await
-        .map_err(|e| format!("Failed to create payment: {}", e))?
-        .ok_or_else(|| "Failed to create payment: no result returned".to_string())?;
-    
-    println!(
-        "✅ Created payment: ID={}, MerchantTxnId={}, Amount={}",
-        created_payment.id, created_payment.merchant_transaction_id, created_payment.amount
-    );
+        .map_err(|e| format!("Failed to create payment: {}", e))?;
+
+    let created_payment: Option<Payment> = result.take(0)
+        .map_err(|e| format!("Query error: {}", e))?;
+
+    let created_payment = created_payment.ok_or_else(|| "Failed to create payment: no result returned".to_string())?;
+
+    println!("✅ Created payment: {} ({})", created_payment.merchant_transaction_id, created_payment.id);
     Ok(created_payment)
 }
-    // ✅ Fixed: Changed parameter from &Uuid to &str
+
+
+
     pub async fn get_payment(&self, payment_id: &str) -> Option<Payment> {
         let id_part = if payment_id.starts_with("payments:") {
             payment_id.strip_prefix("payments:").unwrap_or(payment_id)
@@ -267,31 +265,29 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         found
     }
 
-    pub async fn update_payment_status(&self, merchant_transaction_id: &str, status: &PaymentStatus) -> Result<(), String> {
-        let status_str = format!("{:?}", status);
-        let result: Result<Vec<Payment>, _> = self.db
-            .query("UPDATE payments SET status = $status, updated_at = $now WHERE merchant_transaction_id = $merchant_id RETURN AFTER")
-            .bind(("status", status_str))
-            .bind(("now", Utc::now()))
-            .bind(("merchant_id", merchant_transaction_id.to_string()))
-            .await
-            .and_then(|mut response| response.take(0));
-        
-        match result {
-            Ok(payments) if !payments.is_empty() => {
-                println!("✅ Updated payment status: {:?} (MerchantTxnId: {})", status, merchant_transaction_id);
-                Ok(())
-            }
-            Ok(_) => Err(format!("Payment not found for merchant_transaction_id: {}", merchant_transaction_id)),
-            Err(e) => Err(format!("Database error: {}", e)),
+pub async fn update_payment_status(&self, merchant_transaction_id: &str, status: &PaymentStatus) -> Result<(), String> {
+    let status_str = format!("{:?}", status);
+    let result: Result<Vec<Payment>, _> = self.db
+        .query("UPDATE payments SET status = $status WHERE merchant_transaction_id = $merchant_id RETURN AFTER")
+        .bind(("status", status_str))
+        .bind(("merchant_id", merchant_transaction_id.to_string()))
+        .await
+        .and_then(|mut response| response.take(0));
+    
+    match result {
+        Ok(payments) if !payments.is_empty() => {
+            println!("✅ Updated payment status: {:?} (MerchantTxnId: {})", status, merchant_transaction_id);
+            Ok(())
         }
+        Ok(_) => Err(format!("Payment not found for merchant_transaction_id: {}", merchant_transaction_id)),
+        Err(e) => Err(format!("Database error: {}", e)),
     }
+}
 
     pub async fn update_payment_checkout_id(&self, merchant_transaction_id: &str, checkout_id: &str) -> Result<(), String> {
         let result: Result<Vec<Payment>, _> = self.db
-            .query("UPDATE payments SET checkout_id = $checkout_id, updated_at = $now WHERE merchant_transaction_id = $merchant_id RETURN AFTER")
+            .query("UPDATE payments SET checkout_id = $checkout_id WHERE merchant_transaction_id = $merchant_id RETURN AFTER")
             .bind(("checkout_id", checkout_id.to_string()))
-            .bind(("now", Utc::now()))
             .bind(("merchant_id", merchant_transaction_id.to_string()))
             .await
             .and_then(|mut response| response.take(0));
@@ -306,7 +302,6 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         }
     }
 
-    // ✅ Fixed: Changed parameter from &Uuid to &str
     pub async fn get_payments_by_user(&self, user_id: &str) -> Vec<Payment> {
         let result: Result<Vec<Payment>, _> = self.db
             .query("SELECT * FROM payments WHERE user_id = $user_id")
@@ -321,12 +316,12 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
     // Subscription operations
     // ---------------------
     
- pub async fn create_subscription(&self, dto: CreateSubscriptionDto) -> Result<Subscription, String> {
+pub async fn create_subscription(&self, dto: CreateSubscriptionDto) -> Result<Subscription, String> {
     let subscription_id = Uuid::new_v4().simple().to_string();
-    
-    // ✅ Don't set the id field in content
+    let thing_id = Thing::from(("subscriptions", subscription_id.clone().as_str()));
+
     let subscription = Subscription {
-        id: String::new(), // Will be set by SurrealDB
+        id: thing_id,// set id explicitly
         user_id: dto.user_id,
         plan_name: dto.plan_name,
         price: dto.price,
@@ -335,8 +330,6 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         payment_brand: None,
         start_date: None,
         end_date: None,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
     };
 
     let created_subscription: Subscription = self.db
@@ -345,7 +338,7 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         .await
         .map_err(|e| format!("Failed to create subscription: {}", e))?
         .ok_or_else(|| "Failed to create subscription: no result returned".to_string())?;
-    
+
     println!("✅ Created subscription: {} ({})", created_subscription.plan_name, created_subscription.id);
     Ok(created_subscription)
 }
@@ -364,7 +357,6 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         result.ok().flatten()
     }
 
-    // ✅ Fixed: Changed parameter from &Uuid to &str
     pub async fn get_subscriptions_by_user(&self, user_id: &str) -> Vec<Subscription> {
         let result: Result<Vec<Subscription>, _> = self.db
             .query("SELECT * FROM subscriptions WHERE user_id = $user_id")
@@ -375,37 +367,42 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         result.unwrap_or_default()
     }
 
-    // ✅ Fixed: Changed parameter from &Uuid to &str
-    pub async fn activate_subscription(&self, subscription_id: &str) -> Result<(), String> {
-        let now = Utc::now();
-        let end_date = now + Duration::days(1);
-        
-        let id_part = if subscription_id.starts_with("subscriptions:") {
-            subscription_id.strip_prefix("subscriptions:").unwrap_or(subscription_id)
-        } else {
-            subscription_id
-        };
+ pub async fn activate_subscription(&self, subscription_id: &str) -> Result<(), String> {
+    let now = Utc::now();
+    let end_date = now + Duration::days(1);
 
-        let result: Result<Vec<Subscription>, _> = self.db
-            .query("UPDATE subscriptions SET status = 'Active', start_date = $start, end_date = $end, updated_at = $now WHERE id = $id RETURN AFTER")
-            .bind(("start", now))
-            .bind(("end", end_date))
-            .bind(("now", now))
-            .bind(("id", format!("subscriptions:{}", id_part)))
-            .await
-            .and_then(|mut response| response.take(0));
-        
-        match result {
-            Ok(subscriptions) if !subscriptions.is_empty() => {
-                println!("✅ Activated subscription: Active (ID: {})", subscription_id);
-                Ok(())
-            }
-            Ok(_) => Err(format!("Subscription not found: {}", subscription_id)),
-            Err(e) => Err(format!("Database error: {}", e)),
+    let id_part = if subscription_id.starts_with("subscriptions:") {
+        subscription_id.strip_prefix("subscriptions:").unwrap_or(subscription_id)
+    } else {
+        subscription_id
+    };
+
+    let record_id = format!("subscriptions:{}", id_part);
+
+    let query = format!(
+        "UPDATE {} SET status = 'Active', start_date = $start, end_date = $end RETURN AFTER",
+        record_id
+    );
+
+    let result: Result<Vec<Subscription>, _> = self.db
+        .query(&query)
+        .bind(("start", now))
+        .bind(("end", end_date))
+        .await
+        .and_then(|mut response| response.take(0));
+
+    match result {
+        Ok(subscriptions) if !subscriptions.is_empty() => {
+            println!("✅ Activated subscription: Active (ID: {})", record_id);
+            Ok(())
         }
+        Ok(_) => Err(format!("Subscription not found: {}", record_id)),
+        Err(e) => Err(format!("Database error: {}", e)),
     }
+}
 
-    // ✅ Fixed: Changed parameter from &Uuid to &str
+
+
     pub async fn update_subscription_status(&self, subscription_id: &str, status: SubscriptionStatus) -> Result<(), String> {
         let status_str = format!("{:?}", status);
         let id_part = if subscription_id.starts_with("subscriptions:") {
@@ -415,9 +412,8 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         };
 
         let result: Result<Vec<Subscription>, _> = self.db
-            .query("UPDATE subscriptions SET status = $status, updated_at = $now WHERE id = $id RETURN AFTER")
+            .query("UPDATE subscriptions SET status = $status WHERE id = $id RETURN AFTER")
             .bind(("status", status_str))
-            .bind(("now", Utc::now()))
             .bind(("id", format!("subscriptions:{}", id_part)))
             .await
             .and_then(|mut response| response.take(0));
@@ -432,7 +428,6 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         }
     }
 
-    // ✅ Fixed: Changed parameter from &Uuid to &str
     pub async fn update_subscription_payment_details(
         &self,
         subscription_id: &str,
@@ -447,10 +442,9 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         };
 
         let result: Result<Vec<Subscription>, _> = self.db
-            .query("UPDATE subscriptions SET payment_method = $method, payment_brand = $brand, updated_at = $now WHERE id = $id RETURN AFTER")
+            .query("UPDATE subscriptions SET payment_method = $method, payment_brand = $brand WHERE id = $id RETURN AFTER")
             .bind(("method", method_str))
             .bind(("brand", brand.clone()))
-            .bind(("now", Utc::now()))
             .bind(("id", format!("subscriptions:{}", id_part)))
             .await
             .and_then(|mut response| response.take(0));
@@ -469,7 +463,6 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
     // Recurring Payment operations
     // ---------------------
     
-    // ✅ Fixed: Changed parameters from Uuid to String
     pub async fn create_recurring_payment(
         &self,
         user_id: String,
@@ -477,29 +470,27 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         token: String,
         card_last_four: Option<String>,
         card_brand: Option<String>,
-    ) -> RecurringPayment {
+    ) -> Result<RecurringPayment, String> {
         let rec_payment_id = Uuid::new_v4().simple().to_string();
         let rec_payment = RecurringPayment {
-            id: format!("recurring_payments:{}", rec_payment_id),
+            id: String::new(), // Will be set by SurrealDB
             user_id,
             subscription_id,
             recurring_token: token,
             card_last_four,
             card_brand,
             status: RecurringPaymentStatus::Active,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
         };
 
-        let _: Result<Vec<RecurringPayment>, _> = self.db
-            .query("CREATE recurring_payments:$record_id CONTENT $rec_payment")
-            .bind(("record_id", rec_payment_id.clone()))
-            .bind(("rec_payment", rec_payment.clone()))
+        let created_payment: RecurringPayment = self.db
+            .create(("recurring_payments", rec_payment_id.clone()))
+            .content(rec_payment)
             .await
-            .and_then(|mut response| response.take(0));
+            .map_err(|e| format!("Failed to create recurring payment: {}", e))?
+            .ok_or_else(|| "Failed to create recurring payment: no result returned".to_string())?;
         
-        println!("✅ Created recurring payment: {}", rec_payment.id);
-        rec_payment
+        println!("✅ Created recurring payment: {}", created_payment.id);
+        Ok(created_payment)
     }
 
     pub async fn get_active_recurring_payments(&self) -> Vec<RecurringPayment> {
@@ -517,9 +508,8 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         token: &str,
     ) -> Result<(), String> {
         let result: Result<Vec<Payment>, _> = self.db
-            .query("UPDATE payments SET recurring_token = $token, updated_at = $now WHERE merchant_transaction_id = $merchant_id RETURN AFTER")
+            .query("UPDATE payments SET recurring_token = $token WHERE merchant_transaction_id = $merchant_id RETURN AFTER")
             .bind(("token", token.to_string()))
-            .bind(("now", Utc::now()))
             .bind(("merchant_id", merchant_transaction_id.to_string()))
             .await
             .and_then(|mut response| response.take(0));
@@ -535,7 +525,7 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
     }
 
     pub async fn get_due_subscriptions(&self) -> Result<Vec<crate::models::subscription::Subscription>, String> {
-        let now = Utc::now();
+        let now = Utc::now().to_rfc3339();
         let result: Result<Vec<crate::models::subscription::Subscription>, _> = self.db
             .query("SELECT * FROM subscriptions WHERE status = 'Active' AND end_date <= $now")
             .bind(("now", now))
@@ -546,7 +536,7 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
     }
 
     pub async fn get_expired_unpaid_subscriptions(&self) -> Result<Vec<crate::models::subscription::Subscription>, String> {
-        let cutoff_date = Utc::now() - chrono::Duration::days(1);
+        let cutoff_date = (Utc::now() - chrono::Duration::days(1)).to_rfc3339();
         let result: Result<Vec<crate::models::subscription::Subscription>, _> = self.db
             .query("SELECT * FROM subscriptions WHERE status = 'Active' AND end_date < $cutoff")
             .bind(("cutoff", cutoff_date))
@@ -556,10 +546,9 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         result.map_err(|e| format!("Database error: {}", e))
     }
 
-    // ✅ Fixed: Changed parameter from &uuid::Uuid to &str
     pub async fn mark_subscription_renewed(&self, subscription_id: &str) -> Result<(), String> {
-        let now = Utc::now();
-        let end_date = now + chrono::Duration::days(30);
+        let now = Utc::now().to_rfc3339();
+        let end_date = (Utc::now() + chrono::Duration::days(30)).to_rfc3339();
         
         let id_part = if subscription_id.starts_with("subscriptions:") {
             subscription_id.strip_prefix("subscriptions:").unwrap_or(subscription_id)
@@ -568,10 +557,9 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         };
 
         let result: Result<Vec<crate::models::subscription::Subscription>, _> = self.db
-            .query("UPDATE subscriptions SET start_date = $start, end_date = $end, updated_at = $now, status = 'Active' WHERE id = $id RETURN AFTER")
+            .query("UPDATE subscriptions SET start_date = $start, end_date = $end, status = 'Active' WHERE id = $id RETURN AFTER")
             .bind(("start", now))
             .bind(("end", end_date))
-            .bind(("now", now))
             .bind(("id", format!("subscriptions:{}", id_part)))
             .await
             .and_then(|mut response| response.take(0));
@@ -586,7 +574,6 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         }
     }
 
-    // ✅ Fixed: Changed parameter from &uuid::Uuid to &str
     pub async fn suspend_subscription(&self, subscription_id: &str) -> Result<(), String> {
         let id_part = if subscription_id.starts_with("subscriptions:") {
             subscription_id.strip_prefix("subscriptions:").unwrap_or(subscription_id)
@@ -595,8 +582,7 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         };
 
         let result: Result<Vec<crate::models::subscription::Subscription>, _> = self.db
-            .query("UPDATE subscriptions SET status = 'Suspended', updated_at = $now WHERE id = $id RETURN AFTER")
-            .bind(("now", Utc::now()))
+            .query("UPDATE subscriptions SET status = 'Suspended' WHERE id = $id RETURN AFTER")
             .bind(("id", format!("subscriptions:{}", id_part)))
             .await
             .and_then(|mut response| response.take(0));
@@ -611,23 +597,22 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         }
     }
 
-    // ✅ Fixed: Changed parameters from Uuid to String
     pub async fn create_manual_renewal_notification(
         &self,
         user_id: String,
         subscription_id: String,
     ) -> Result<(), String> {
-        let notification_id = Uuid::new_v4().simple().to_string();
+        
+        let notification_id = format!("notification:{}", Uuid::new_v4().simple());
+
         let message = format!("Your subscription {} is due for renewal", subscription_id);
-        let now = Utc::now();
 
         let query = r#"
             CREATE notification:$record_id SET
                 user_id = $user_id,
                 subscription_id = $subscription_id,
                 message = $message,
-                acknowledged = false,
-                created_at = $created_at
+                acknowledged = false
         "#;
 
         self.db
@@ -636,7 +621,6 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
             .bind(("user_id", user_id.clone()))
             .bind(("subscription_id", subscription_id.clone()))
             .bind(("message", message.clone()))
-            .bind(("created_at", now))
             .await
             .map_err(|e| e.to_string())?;
         
@@ -648,7 +632,7 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         &self,
         user_id: &str,
     ) -> Result<Vec<crate::models::notification::Notification>, String> {
-        let query = "SELECT * FROM notification WHERE user_id = $user_id ORDER BY created_at DESC";
+        let query = "SELECT * FROM notification WHERE user_id = $user_id";
         
         match self.db.query(query).bind(("user_id", user_id.to_string())).await {
             Ok(mut result) => {
@@ -661,8 +645,12 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
         }
     }
 
+    
+
     pub async fn acknowledge_notification(&self, notification_id: &str) -> Result<(), String> {
         let query = "UPDATE notification SET acknowledged = true WHERE id = $notification_id";
+        let sql = "UPDATE $notification_id SET acknowledged = true";
+
         
         match self.db.query(query).bind(("notification_id", notification_id.to_string())).await {
             Ok(_) => {
@@ -675,7 +663,6 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
 
     pub async fn create_test_notification(&self, user_id: String, message: String) -> Result<(), String> {
         let notification_id = Uuid::new_v4().simple().to_string();
-        let now = Utc::now();
 
         let query = r#"
             CREATE notification SET
@@ -683,8 +670,7 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
                 user_id = $user_id,
                 subscription_id = "test-subscription",
                 message = $message,
-                acknowledged = false,
-                created_at = $created_at
+                acknowledged = false
         "#;
 
         match self.db
@@ -692,7 +678,6 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
             .bind(("record_id", notification_id.clone()))
             .bind(("user_id", user_id.clone()))
             .bind(("message", message.clone()))
-            .bind(("created_at", now))
             .await 
         {
             Ok(_) => {
@@ -705,7 +690,6 @@ pub async fn create_payment(&self, payment_dto: CreatePaymentDto) -> Result<Paym
             }
         }
     }
-
         
     // ---------------------
     // Debug utilities (converted to async)

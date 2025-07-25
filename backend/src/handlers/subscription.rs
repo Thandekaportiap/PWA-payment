@@ -11,6 +11,16 @@ pub struct CreateSubscriptionRequest {
     pub price: f64,
 }
 
+#[derive(Deserialize)]
+pub struct ActivateSubscriptionRequest {
+    pub subscription_id: String,
+}
+
+#[derive(Serialize)]
+pub struct ApiResponseError {
+    pub message: String,
+}
+
 #[derive(Serialize)]
 pub struct SubscriptionResponse {
     pub id: String,
@@ -34,7 +44,7 @@ pub async fn create_subscription(
 
     match db.create_subscription(dto).await {
         Ok(subscription) => Ok(HttpResponse::Ok().json(SubscriptionResponse {
-            id: subscription.id,
+         id: subscription.id.id.to_string(),
             user_id: subscription.user_id,
             plan_name: subscription.plan_name,
             price: subscription.price,
@@ -55,7 +65,7 @@ pub async fn get_subscription(
     
     match db.get_subscription(&subscription_id).await {
         Some(subscription) => Ok(HttpResponse::Ok().json(SubscriptionResponse {
-            id: subscription.id,
+          id: subscription.id.id.to_string(),
             user_id: subscription.user_id,
             plan_name: subscription.plan_name,
             price: subscription.price,
@@ -82,5 +92,24 @@ pub async fn renew_subscription(
         Err(e) => Ok(HttpResponse::BadRequest().json(serde_json::json!({
             "error": e
         }))),
+    }
+}
+
+#[post("/activate")]
+pub async fn activate_subscription(
+    db: Data<DatabaseService>,
+    payload: Json<ActivateSubscriptionRequest>,
+) -> Result<HttpResponse> {
+    match db.activate_subscription(&payload.subscription_id).await { // 👈 Added .await here
+        Ok(_) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "subscription_id": payload.subscription_id,
+            "status": "activated",
+            "message": "Subscription activated successfully"
+        }))),
+        Err(e) => {
+            Ok(HttpResponse::BadRequest().json(ApiResponseError {
+                message: format!("Error activating subscription: {}", e),
+            }))
+        }
     }
 }
